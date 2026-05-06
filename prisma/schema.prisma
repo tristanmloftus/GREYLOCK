@@ -1,0 +1,457 @@
+// Greylock — Prisma schema
+// =============================================================================
+// AGENT-ARCH (Phase 1). DO NOT add business logic here.
+// AGENT-DB owns Phase 2 wire-up: chooses the SQLCipher binding (e.g.
+// `@journeyapps/sqlcipher` or `better-sqlite3-multiple-ciphers` via a custom
+// Prisma driver adapter or a Prisma proxy). The provider stays "sqlite" so the
+// schema parses with stock Prisma; AGENT-DB will swap the driver at runtime,
+// not in this file.
+//
+// Hard rules enforced by this schema:
+//   1. NO column ever holds a plaintext Plaid access token, refresh token,
+//      passkey signing key, master passphrase, DEK, KEK, or session secret.
+//   2. Every encrypted blob is `Bytes` carrying the layout:
+//          version(1) || domain_tag(1) || nonce(12) || ciphertext || tag(16)
+//      where AAD is the stable identifier of the row + domain ("personal:item:<id>"
+//      or "pcc:item:<id>"). See `docs/ARCHITECTURE.md` §Crypto and
+//      `docs/THREAT_MODEL.md` §AAD scheme.
+//   3. Every "personal" row carries `userId` and is filtered through the
+//      repository layer; every "pcc" row carries `domain = "pcc"` and is
+//      visibility-gated by `PccMembership`. There is NO admin override path
+//      that bypasses these filters in application code.
+//   4. No raw secrets columns. No "password", "secret", "token_plain" etc.
+//      Auditor: grep this file for those substrings — must be zero hits.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  // AGENT-DB will provide the SQLCipher key at connection time. Prisma still
+  // sees a "sqlite" datasource. The key is fetched from the master passphrase
+  // (Keychain) at process boot — never from env or this file.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+// Domain partition. Every encrypted blob is bound to one of these values via
+// AAD; a PCC ciphertext physically cannot decrypt as a personal ciphertext
+// because their AAD prefixes differ.
+enum Domain {
+  personal
+  pcc
+}
+
+enum Role {
+  owner // Rory only
+  member // Tristan, Cade
+}
+
+enum SessionStatus {
+  active
+  revoked
+  expired
+}
+
+enum AuditAction {
+  // auth
+  passkey_enrollment
+  passkey_enrollment_rejected
+  passkey_authentication_success
+  passkey_authentication_failure
+  session_created
+  session_revoked
+  session_expired
+  // plaid
+  plaid_link_token_minted
+  plaid_public_token_exchanged
+  plaid_item_added
+  plaid_item_removed
+  plaid_token_decrypted
+  plaid_sync_started
+  plaid_sync_completed
+  plaid_sync_failed
+  // compute / snapshot
+  net_worth_snapshot_written
+  // admin
+  admin_enroll_invoked
+  admin_revoke_invoked
+  admin_revoke_all_invoked
+  admin_master_rotation_started
+  admin_master_rotation_completed
+  admin_master_rotation_failed
+  admin_audit_verify_invoked
+  // crypto
+  master_kek_loaded
+  master_kek_unloaded
+  pcc_dek_unwrapped
+  pcc_dek_zeroized
+  per_user_dek_derived
+  per_user_dek_zeroized
+  // safety
+  rate_limit_tripped
+  ipc_keybridge_request_denied
+}
+
+enum AuditOutcome {
+  success
+  failure
+  denied
+}
+
+// -----------------------------------------------------------------------------
+// User + auth
+// -----------------------------------------------------------------------------
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  displayName String
+  role        Role     @default(member)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Per-user KEK is *never* persisted. What is persisted is the wrapped
+  // per-user DEK that the KEK unlocks at session-establishment time.
+  //
+  // Layout of `wrappedUserDek`:
+  //   version(1) || domain_tag(1)=0x01_personal || nonce(12) || ct || tag(16)
+  // AAD = utf8("personal:userdek:" + user.id)
+  // The KEK that unwraps it is HKDF(passkey_credential_id || pepper, info=
+  // "greylock/userKek/v1") performed in process memory at login.
+  wrappedUserDek Bytes?
+
+  // Wrapped key index: monotonic counter incremented on rotation.
+  userDekVersion Int @default(1)
+
+  passkeys      Passkey[]
+  sessions      Session[]
+  items         Item[]             @relation("UserItems")
+  snapshots     NetWorthSnapshot[] @relation("UserSnapshots")
+  pccMembership PccMembership?
+  auditEntries  AuditLogEntry[]    @relation("ActorAudit")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Passkey {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // WebAuthn credential identifiers. NOT secrets — public credential id and
+  // public key. The corresponding private key never leaves the authenticator.
+  credentialId        Bytes   @unique // raw credential id (binary)
+  credentialPublicKey Bytes // COSE public key (cbor)
+  counter             BigInt  @default(0)
+  transports          String? // CSV: "internal,hybrid,usb,nfc,ble"
+  aaguid              Bytes? // authenticator AAGUID (optional)
+  deviceLabel         String? // human-friendly, e.g. "Rory's iPhone"
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  // Salt (pepper-mixed) used in the HKDF "info" string to derive this user's
+  // KEK from the credential. Stored so KEK derivation is deterministic across
+  // sessions. Salt alone does not unlock anything — needs the credential and
+  // a valid WebAuthn assertion.
+  kekSalt Bytes
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // iron-session encrypts the cookie; we still keep a server-side anchor so
+  // we can revoke. The cookie carries a random session id; this row is the
+  // ground truth.
+  status         SessionStatus @default(active)
+  createdAt      DateTime      @default(now())
+  lastActivityAt DateTime      @default(now())
+  expiresAt      DateTime // = createdAt + 8h (absolute)
+  idleTimeoutAt  DateTime // = lastActivityAt + 30m (idle)
+  revokedAt      DateTime?
+  revokedReason  String? // "new_login" | "manual" | "logout" | "admin_revoke"
+
+  // User-agent string and IP-of-establishment (always 127.0.0.1 / ::1 for
+  // localhost, kept for future remote-access detection). NOT logged elsewhere.
+  userAgent  String?
+  remoteAddr String?
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([idleTimeoutAt])
+}
+
+// -----------------------------------------------------------------------------
+// PCC membership
+// -----------------------------------------------------------------------------
+
+model PccMembership {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime  @default(now())
+  revokedAt DateTime?
+  // No "role within PCC" yet — all three are peers in v0.1.
+
+  @@index([revokedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Plaid items + accounts + transactions
+// -----------------------------------------------------------------------------
+
+model Item {
+  id String @id @default(cuid())
+
+  // Domain partition. `personal` rows have non-null userId; `pcc` rows MAY
+  // have userId set to the operator who linked it (for audit trail) but
+  // visibility is governed by PccMembership.
+  domain Domain
+  userId String?
+  user   User?   @relation("UserItems", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Plaid identifiers (NOT secrets — public to Plaid).
+  plaidItemId        String  @unique
+  plaidInstitutionId String?
+  institutionName    String?
+
+  // ENCRYPTED Plaid access_token. NEVER plaintext anywhere.
+  // Layout: version(1) || domain_tag(1) || nonce(12) || ct || tag(16)
+  // AAD = "personal:itemtoken:<itemId>:<userDekVersion>"
+  //    or "pcc:itemtoken:<itemId>:<masterKekVersion>"
+  encryptedAccessToken Bytes
+
+  // Sync cursor (Plaid `transactions/sync` cursor). Plain text — not a secret;
+  // does not authenticate to Plaid.
+  syncCursor          String?
+  lastSyncAt          DateTime?
+  lastSyncOutcome     String? // "success" | "error" | "pending"
+  consecutiveFailures Int       @default(0)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  removedAt     DateTime?
+  removedReason String?
+
+  accounts     Account[]
+  transactions Transaction[]
+
+  @@index([domain])
+  @@index([userId])
+  @@index([domain, userId])
+  @@index([removedAt])
+}
+
+model Account {
+  id     String @id @default(cuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  domain          Domain // denormalized from Item for index speed
+  userId          String? // denormalized; null for PCC rows
+  plaidAccountId  String  @unique
+  name            String
+  officialName    String?
+  mask            String? // last 4 — not a secret
+  type            String // "depository" | "credit" | "loan" | "investment" | "other"
+  subtype         String?
+  isoCurrencyCode String  @default("USD")
+
+  // Latest balance snapshot (cached). Authoritative balance history is in
+  // NetWorthSnapshot. Stored in MINOR UNITS (cents) as Int to avoid float drift.
+  currentBalanceCents   BigInt?
+  availableBalanceCents BigInt?
+  limitCents            BigInt?
+  balanceUpdatedAt      DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  closedAt  DateTime?
+
+  transactions Transaction[]
+
+  @@index([itemId])
+  @@index([domain, userId])
+  @@index([domain])
+}
+
+model Transaction {
+  id        String  @id @default(cuid())
+  itemId    String
+  item      Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  domain Domain // denormalized
+  userId String? // denormalized
+
+  plaidTransactionId String    @unique
+  amountCents        BigInt // signed; sign convention per Plaid: + = outflow
+  isoCurrencyCode    String    @default("USD")
+  date               DateTime
+  authorizedDate     DateTime?
+  name               String
+  merchantName       String?
+  pending            Boolean   @default(false)
+  category           String? // primary category (Plaid PFC)
+  categoryDetailed   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  removedAt DateTime? // soft delete on Plaid removal events
+
+  @@index([itemId])
+  @@index([accountId])
+  @@index([domain, userId, date])
+  @@index([date])
+  @@index([removedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Snapshots (compute layer output)
+// -----------------------------------------------------------------------------
+
+model NetWorthSnapshot {
+  id     String  @id @default(cuid())
+  domain Domain
+  userId String? // null for PCC snapshots
+  user   User?   @relation("UserSnapshots", fields: [userId], references: [id], onDelete: SetNull)
+
+  takenAt DateTime @default(now())
+
+  // Aggregates in MINOR UNITS (cents). All USD for v0.1.
+  assetsCents      BigInt
+  liabilitiesCents BigInt
+  netWorthCents    BigInt
+
+  // Cash subset (depository accounts).
+  cashCents BigInt
+
+  // Month-net (rolling 30 day flow).
+  monthNetCents BigInt?
+
+  // Compute snapshot version — incremented when compute formulas change.
+  computeVersion Int @default(1)
+
+  // Account-level breakdown serialized as JSON. Not encrypted (no token data,
+  // no PII beyond institution + masked account name; same data already in
+  // Account rows). Kept for audit replay even if a row is later mutated.
+  breakdownJson String
+
+  @@index([domain, userId, takenAt])
+  @@index([domain, takenAt])
+  @@index([takenAt])
+}
+
+// -----------------------------------------------------------------------------
+// Audit log (append-only, hash-chained)
+// -----------------------------------------------------------------------------
+
+model AuditLogEntry {
+  // Monotonic auto-increment is essential for chain ordering. SQLite gives us
+  // an INTEGER PRIMARY KEY rowid alias.
+  seq BigInt @id @default(autoincrement())
+
+  // ISO-8601 UTC, microsecond resolution kept as DateTime + nsOffset for
+  // precise ordering when two events fall on the same millisecond.
+  ts      DateTime @default(now())
+  tsNanos Int      @default(0)
+
+  // Actor (nullable for system actors like the sync worker).
+  actorUserId String?
+  actor       User?   @relation("ActorAudit", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorKind   String // "user" | "system" | "admin_cli" | "sync_worker"
+
+  // Domain context, if applicable.
+  domain      Domain?
+  // Optional subject id (e.g. itemId, sessionId, snapshotId, passkeyId) — for
+  // forensic trace; never a secret.
+  subjectId   String?
+  subjectKind String? // "session" | "item" | "snapshot" | "passkey" | "user"
+
+  action  AuditAction
+  outcome AuditOutcome
+
+  // Structured payload (JSON). MUST NOT contain: tokens, DEKs, KEKs, master
+  // passphrase, session secrets, raw cookies, raw cookies, or transaction
+  // amounts of remote third parties. Validated by `lib/audit/sanitizer.ts`.
+  detailsJson String
+
+  // Hash chain.
+  //   prevHash = hash of previous row's `entryHash`, or 32 zero bytes for seq=1.
+  //   entryHash = SHA-256(
+  //       seq          (uint64 BE) ||
+  //       tsUnixNanos  (int64 BE)  ||
+  //       actorUserId  (utf8 || 0x00) ||
+  //       actorKind    (utf8 || 0x00) ||
+  //       domain       (utf8 || 0x00) ||
+  //       subjectId    (utf8 || 0x00) ||
+  //       subjectKind  (utf8 || 0x00) ||
+  //       action       (utf8 || 0x00) ||
+  //       outcome      (utf8 || 0x00) ||
+  //       detailsJson  (utf8 length-prefixed uint32 BE) ||
+  //       prevHash     (32 bytes)
+  //     )
+  // `pnpm admin:audit-verify` walks the table seq-ascending and recomputes
+  // every entryHash; mismatch = chain broken (tamper or corruption).
+  prevHash  Bytes
+  entryHash Bytes @unique
+
+  @@index([ts])
+  @@index([actorUserId])
+  @@index([action])
+  @@index([domain, ts])
+  @@index([subjectKind, subjectId])
+}
+
+// -----------------------------------------------------------------------------
+// Master-key wrap state
+// -----------------------------------------------------------------------------
+
+// The PCC DEK is wrapped by the Master KEK (which itself is derived from the
+// master passphrase fetched from Keychain at boot). We persist the WRAPPED
+// PCC DEK and a version counter so rotations are atomic.
+model PccKeyWrap {
+  id           String    @id @default(cuid())
+  version      Int       @unique // monotonic; pcc:itemtoken AAD references this version
+  // Layout: version(1) || domain_tag(1)=0x02_pcc || nonce(12) || ct || tag(16)
+  // AAD = utf8("pcc:dekwrap:v" + version)
+  wrappedDek   Bytes
+  // KDF parameters used for the Master KEK at the time of this wrap.
+  kdfAlgorithm String // "scrypt"
+  kdfN         Int // e.g. 1 << 17
+  kdfR         Int // e.g. 8
+  kdfP         Int // e.g. 1
+  kdfSalt      Bytes // per-wrap random salt (mixed with CRYPTO_PEPPER inside the KDF info)
+  createdAt    DateTime  @default(now())
+  retiredAt    DateTime?
+
+  @@index([retiredAt])
+}
+
+// -----------------------------------------------------------------------------
+// Rate limit (fixed-window, in-DB so admin CLI can inspect)
+// -----------------------------------------------------------------------------
+
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  // Bucket key, e.g. "auth:assert:127.0.0.1" or "auth:enroll:rory@…"
+  bucketKey   String   @unique
+  windowStart DateTime
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}
