@@ -1,0 +1,74 @@
+# --- secrets / env (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+certs/*.pem
+certs/*.key
+certs/*-key.pem
+
+# --- databases ---
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+prisma/*.db
+prisma/*.db-journal
+prisma/migrations/dev.db
+
+# --- build / runtime ---
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- deps ---
+node_modules/
+.pnpm-store/
+.npm/
+
+# --- test / coverage ---
+coverage/
+.nyc_output/
+playwright-report/
+playwright/.cache/
+test-results/
+
+# --- editors / OS ---
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*~
+
+# --- logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- runtime state ---
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# --- Greylock-specific ---
+.greylock-state/
+audit.log
+sync.log
+
+# --- orchestration / agent state (NOT part of greylock) ---
+.omc/
+.claude/
+
