@@ -8,11 +8,26 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Phase 4 (AGENT-UI): Need the automatic JSX runtime for React 19 in
+  // server-rendered tests. esbuild defaults to classic; force automatic so
+  // .tsx files don't require an explicit React import.
+  esbuild: {
+    jsx: 'automatic',
+  },
   test: {
     environment: 'node',
     globals: false,
     include: ['tests/**/*.test.ts'],
     reporters: ['default'],
+    // Phase 4 (AGENT-UI): allow CSS Module imports under SSR by returning the
+    // identity map. Vitest's `css.modules.classNameStrategy='non-scoped'` is
+    // what `react-dom/server` consumes — class names are stable strings and
+    // we don't depend on hashed names in assertions.
+    css: {
+      modules: {
+        classNameStrategy: 'non-scoped',
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json'],

@@ -1,0 +1,48 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.track {
+  position: relative;
+  height: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-blue);
+  transform-origin: left;
+  /* fill width controlled inline via --fill */
+  width: var(--fill, 0%);
+  transition: width 200ms ease-out;
+}
+
+.ticks {
+  position: relative;
+  height: 8px;
+}
+.tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.labels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+.labels span:nth-child(2) { text-align: center; }
+.labels span:nth-child(3) { text-align: center; }
+.labels span:nth-child(4) { text-align: right; }

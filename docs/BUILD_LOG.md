@@ -4,6 +4,29 @@ Append-only record of orchestration decisions, agent spawns, QA verdicts, and ph
 
 ---
 
+## 2026-05-06 — Phase 4 — UI ✅
+
+Commit: pending — `feat(ui): dashboard, connect flow, admin`
+
+**AGENT-UI shipped:**
+- 11 App Router pages in the OVRWCH terminal aesthetic (dark `#0e0f11`, IBM Plex Mono + Syne self-hosted via `next/font/local`): `/login`, `/auth/enroll`, `/`, `/connect`, `/admin`, `/admin/enroll`, `/admin/audit`, `/admin/items`, `/not-found`, `/error`, root layout.
+- Every protected page is a server component reading state via `getBootedDb()` + repos. Owner gating returns **404** (no role enumeration). Generic error copy (no `kind` echo).
+- 5 new API routes (Phase-3 deferrals): `/api/healthz`, `/api/dashboard/{snapshot,series}`, `/api/admin/{enroll,revoke}`.
+- Components: chrome + 4-metric summary strip + $1B progress bar with milestone ticks + two-column #me/pcc split + account/transaction tables + Plaid Link button + domain picker + passkey login/enroll buttons + admin forms + accessible modal + 30 s poller (pauses on tab-hidden, surfaces "session expired" modal on 401).
+- Plaid Link script (`https://cdn.plaid.com/link/v2/stable/link-initialize.js`) loaded via `next/script` — the **only** third-party origin. All fonts self-hosted. Phase-5 CSP needs `script-src 'self' https://cdn.plaid.com`; everything else is `'self'`.
+
+**Tests:** 3 Playwright e2e specs (9/9 pass) + 1 vitest UI integration (6 tests). Baseline grew **424 → 430**.
+
+**Phase-3 oversight discovered + fixed:** existing `.js`-suffixed source imports (NodeNext-style `import './foo.js'` resolving to `./foo.ts`) were unresolvable by Next 15's webpack. Added `webpack.extensionAlias` to `next.config.mjs`. Without this, even Phase-3 route handlers would have failed at runtime. QA-SEC re-verifies at Phase 5.
+
+**Validation:** `pnpm typecheck` clean · `pnpm test` 430/430 · `pnpm lint` 0 errors / 15 non-blocking warnings · `pnpm dev` boot smoke passes (HTTP 200 on `/login` with OVRWCH dark background confirmed).
+
+---
+
+
+
+---
+
 ## 2026-05-06 — Phase 3 — Plaid + Sync + Compute + Audit ✅
 
 Commit: pending — `feat(plaid): encrypted token storage, sync loop, compute, audit log`

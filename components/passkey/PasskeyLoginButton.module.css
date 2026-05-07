@@ -1,0 +1,48 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 360px;
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.input {
+  width: 100%;
+}
+
+.submit {
+  background: var(--color-blue);
+  border-color: var(--color-blue);
+  color: var(--color-bg);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.submit:hover:not(:disabled),
+.submit:focus-visible:not(:disabled) {
+  background: rgba(107, 169, 240, 0.85);
+  border-color: rgba(107, 169, 240, 0.85);
+}
+
+.error {
+  color: var(--color-red);
+  font-size: var(--fs-sm);
+}
+
+.status {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}

@@ -1,0 +1,33 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-width: 560px;
+}
+
+.actionRow {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+
+.connectButton {
+  background: var(--color-blue);
+  border-color: var(--color-blue);
+  color: var(--color-bg);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: var(--sp-3) var(--sp-5);
+}
+.connectButton:hover:not(:disabled),
+.connectButton:focus-visible:not(:disabled) {
+  background: rgba(107, 169, 240, 0.85);
+  border-color: rgba(107, 169, 240, 0.85);
+}
+
+.status {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+.error { color: var(--color-red); font-size: var(--fs-sm); }

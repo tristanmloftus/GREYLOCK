@@ -1,0 +1,72 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-5);
+  height: var(--header-h);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.brandMark {
+  font-family: var(--font-display), 'Syne', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: var(--fs-md);
+  letter-spacing: 0.04em;
+}
+.brandSub {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.pulseGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dotGreen { background: var(--color-green); box-shadow: 0 0 6px var(--color-green); }
+.dotAmber { background: var(--color-amber); box-shadow: 0 0 6px var(--color-amber); }
+.dotRed { background: var(--color-red); box-shadow: 0 0 6px var(--color-red); }
+
+.connectButton {
+  border-color: var(--color-blue);
+  color: var(--color-blue);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: var(--sp-2) var(--sp-4);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: var(--radius);
+}
+.connectButton:hover,
+.connectButton:focus-visible {
+  background: rgba(107, 169, 240, 0.08);
+  text-decoration: none;
+}

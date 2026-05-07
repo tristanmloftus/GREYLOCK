@@ -27,6 +27,23 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
   },
+
+  // Phase 4 (AGENT-UI): the codebase uses NodeNext-style `.js` import
+  // suffixes on `.ts` source files (e.g. `import {...} from './foo.js'`
+  // resolves to `./foo.ts`). Next.js 15's default webpack resolver doesn't
+  // map `.js` -> `.ts` in our `lib/` tree, so we extend the resolver with
+  // an extension-alias entry. This keeps existing route handlers working
+  // without rewriting every `.js` suffix.
+  webpack: (config) => {
+    config.resolve = config.resolve ?? {};
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias ?? {}),
+      '.js': ['.ts', '.tsx', '.js'],
+      '.mjs': ['.mts', '.mjs'],
+      '.cjs': ['.cts', '.cjs'],
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
