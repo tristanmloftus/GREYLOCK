@@ -21,17 +21,24 @@
 // =============================================================================
 
 import type {
+  AccountRepository,
   AuditService,
   AuthService,
   CryptoService,
+  ItemRepository,
   PasskeyRepository,
+  PccMembershipRepository,
+  PlaidService,
   SessionRepository,
+  TransactionRepository,
   UserRepository,
 } from '../types/services.js';
+import type { PlaidApi } from 'plaid';
 
 import { createAuthService } from '../auth/index.js';
 import type { RateLimitRepository } from '../auth/rate-limit.js';
 import type { WrappedDekReader } from '../auth/wrapped-dek-reader.js';
+import type { PccKeyWrapRepository } from '../db/index.js';
 
 // -----------------------------------------------------------------------------
 // Repository / service bundles returned to callers
@@ -53,6 +60,7 @@ let cryptoSingleton: CryptoService | null = null;
 let reposSingleton: ResolvedRepos | null = null;
 let auditSingleton: AuditService | null = null;
 let authSingleton: AuthService | null = null;
+let plaidSingleton: PlaidService | null = null;
 
 /** Allow the runtime to inject mock services in tests. The test harness wipes
  *  this between test files. Production code never calls this. */
@@ -60,6 +68,7 @@ export interface RegistryOverrides {
   readonly crypto?: CryptoService;
   readonly repos?: ResolvedRepos;
   readonly audit?: AuditService;
+  readonly plaid?: PlaidService;
 }
 
 let overrides: RegistryOverrides = {};
@@ -70,6 +79,7 @@ export function __setRegistryOverridesForTests(next: RegistryOverrides): void {
   reposSingleton = null;
   auditSingleton = null;
   authSingleton = null;
+  plaidSingleton = null;
 }
 
 export function __resetRegistryForTests(): void {
@@ -78,6 +88,7 @@ export function __resetRegistryForTests(): void {
   reposSingleton = null;
   auditSingleton = null;
   authSingleton = null;
+  plaidSingleton = null;
 }
 
 // -----------------------------------------------------------------------------
@@ -190,4 +201,149 @@ export async function getAuthService(): Promise<AuthService> {
     audit,
   });
   return authSingleton;
+}
+
+/**
+ * Resolve a fully-wired `PlaidService`. Same lazy-singleton pattern as the
+ * other services. AGENT-PLAID added this accessor in Phase 3 — see retro at
+ * `docs/agents/AGENT-PLAID.md`. The route handlers under `app/api/plaid/*`
+ * and AGENT-SYNC's orchestrator both consume this.
+ *
+ * The Plaid bundle requires the full repository set (including item /
+ * account / transaction / pcc-membership / pcc-key-wrap) which is not part
+ * of `ResolvedRepos`. We fetch it separately via `lib/db/index.js#getBootedDb`
+ * to avoid bloating the registry-wide bundle. If the booted DB hasn't been
+ * registered yet, this surfaces a 503 in the route layer.
+ */
+export async function getPlaidService(): Promise<PlaidService> {
+  if (overrides.plaid !== undefined) {
+    return overrides.plaid;
+  }
+  if (plaidSingleton !== null) {
+    return plaidSingleton;
+  }
+  const [cryptoSvc, audit] = await Promise.all([getCryptoServiceLazy(), getAuditService()]);
+
+  // Fetch the full booted-DB bundle (includes Item/Account/Transaction repos).
+  type DbModShape = {
+    readonly getBootedDb?: () => {
+      readonly repos: {
+        readonly itemRepo: ItemRepository;
+        readonly accountRepo: AccountRepository;
+        readonly transactionRepo: TransactionRepository;
+        readonly userRepo: UserRepository;
+        readonly pccMembershipRepo: PccMembershipRepository;
+        readonly pccKeyWrapRepo: PccKeyWrapRepository;
+      };
+    };
+  };
+  let dbMod: DbModShape | null = null;
+  try {
+    const dbPath = '../db/index.js';
+    dbMod = (await import(/* @vite-ignore */ dbPath)) as DbModShape;
+  } catch (cause: unknown) {
+    const message = cause instanceof Error ? cause.message : 'unknown';
+    throw new Error(`PlaidService unavailable: ${message}`);
+  }
+  if (dbMod === null || typeof dbMod.getBootedDb !== 'function') {
+    throw new Error('PlaidService unavailable: lib/db/index.ts missing getBootedDb');
+  }
+  const repos = dbMod.getBootedDb().repos;
+
+  // Wire the Plaid SDK client + service.
+  type PlaidModShape = {
+    readonly createPlaidServiceWithBroker?: (input: {
+      readonly plaidClient: PlaidApi;
+      readonly crypto: CryptoService;
+      readonly itemRepo: ItemRepository;
+      readonly accountRepo: AccountRepository;
+      readonly transactionRepo: TransactionRepository;
+      readonly userRepo: UserRepository;
+      readonly pccMembershipRepo: PccMembershipRepository;
+      readonly pccKeyWrapRepo: PccKeyWrapRepository;
+      readonly audit: AuditService;
+      readonly clientName: string;
+      readonly countryCodes: ReadonlyArray<string>;
+      readonly defaultProducts: ReadonlyArray<'transactions' | 'auth' | 'identity'>;
+    }) => PlaidService;
+    readonly getPlaidClient?: () => PlaidApi;
+    readonly getPlaidConfig?: () => {
+      readonly products: ReadonlyArray<'transactions' | 'auth' | 'identity'>;
+      readonly countryCodes: ReadonlyArray<string>;
+      readonly environment: 'sandbox' | 'development' | 'production';
+    };
+  };
+  let plaidMod: PlaidModShape | null = null;
+  try {
+    const plaidPath = '../plaid/index.js';
+    plaidMod = (await import(/* @vite-ignore */ plaidPath)) as PlaidModShape;
+  } catch (cause: unknown) {
+    const message = cause instanceof Error ? cause.message : 'unknown';
+    throw new Error(`PlaidService unavailable: ${message}`);
+  }
+  if (
+    plaidMod === null ||
+    typeof plaidMod.createPlaidServiceWithBroker !== 'function' ||
+    typeof plaidMod.getPlaidClient !== 'function' ||
+    typeof plaidMod.getPlaidConfig !== 'function'
+  ) {
+    throw new Error('PlaidService unavailable: lib/plaid/index.ts missing factory exports');
+  }
+  const plaidClient = plaidMod.getPlaidClient();
+  const cfg = plaidMod.getPlaidConfig();
+  const created = plaidMod.createPlaidServiceWithBroker({
+    plaidClient,
+    crypto: cryptoSvc,
+    itemRepo: repos.itemRepo,
+    accountRepo: repos.accountRepo,
+    transactionRepo: repos.transactionRepo,
+    userRepo: repos.userRepo,
+    pccMembershipRepo: repos.pccMembershipRepo,
+    pccKeyWrapRepo: repos.pccKeyWrapRepo,
+    audit,
+    clientName: 'Greylock',
+    countryCodes: cfg.countryCodes,
+    defaultProducts: cfg.products,
+  });
+  plaidSingleton = created;
+  return created;
+}
+
+/**
+ * Test accessor: same shape as `getRepos` but returns the full booted-DB
+ * repository bundle that the Plaid service requires. Tests that exercise the
+ * Plaid layer pull repos via this helper.
+ */
+export async function getFullRepos(): Promise<{
+  readonly itemRepo: ItemRepository;
+  readonly accountRepo: AccountRepository;
+  readonly transactionRepo: TransactionRepository;
+  readonly userRepo: UserRepository;
+  readonly pccMembershipRepo: PccMembershipRepository;
+  readonly pccKeyWrapRepo: PccKeyWrapRepository;
+}> {
+  type DbModShape = {
+    readonly getBootedDb?: () => {
+      readonly repos: {
+        readonly itemRepo: ItemRepository;
+        readonly accountRepo: AccountRepository;
+        readonly transactionRepo: TransactionRepository;
+        readonly userRepo: UserRepository;
+        readonly pccMembershipRepo: PccMembershipRepository;
+        readonly pccKeyWrapRepo: PccKeyWrapRepository;
+      };
+    };
+  };
+  let dbMod: DbModShape | null = null;
+  try {
+    const dbPath = '../db/index.js';
+    dbMod = (await import(/* @vite-ignore */ dbPath)) as DbModShape;
+  } catch (cause: unknown) {
+    const message = cause instanceof Error ? cause.message : 'unknown';
+    throw new Error(`Repositories unavailable: ${message}`);
+  }
+  if (dbMod === null || typeof dbMod.getBootedDb !== 'function') {
+    throw new Error('Repositories unavailable: lib/db/index.ts missing getBootedDb');
+  }
+  return dbMod.getBootedDb().repos;
 }

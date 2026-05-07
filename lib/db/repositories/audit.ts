@@ -31,8 +31,6 @@
 //   entryHash   : SHA-256(canonical)
 // =============================================================================
 
-import { createHash } from 'node:crypto';
-
 import type { AuditLogEntry as PrismaAuditLogEntry, PrismaClient } from '@prisma/client';
 
 import { AuditSeq, Err, Ok, UserId } from '../../types/domain.js';
@@ -48,9 +46,8 @@ import type {
   SubjectKind,
 } from '../../types/domain.js';
 
+import { computeEntryHash, ZERO_PREV_HASH } from '../../audit/chain.js';
 import { asBuffer, asBytes, mapPrismaError } from './_shared.js';
-
-const ZERO_PREV_HASH: Uint8Array = new Uint8Array(32);
 
 export interface AuditAppendInputForRepo {
   readonly actorUserId: UserId | null;
@@ -245,76 +242,12 @@ function toAuditEntry(row: PrismaAuditLogEntry): AuditEntry {
 }
 
 // -----------------------------------------------------------------------------
-// Hash construction
+// Hash construction lives in `lib/audit/chain.ts` (Phase 3 extraction).
+// Re-exported for backward compatibility — `lib/db/index.ts` still ships
+// `computeEntryHash` as a public surface.
 // -----------------------------------------------------------------------------
 
-interface HashInput {
-  readonly seq: bigint;
-  readonly tsUnixNanos: bigint;
-  readonly actorUserId: UserId | null;
-  readonly actorKind: ActorKind;
-  readonly domain: Domain | null;
-  readonly subjectId: string | null;
-  readonly subjectKind: SubjectKind | null;
-  readonly action: AuditAction;
-  readonly outcome: AuditOutcome;
-  readonly detailsJson: string;
-  readonly prevHash: Uint8Array;
-}
-
-export function computeEntryHash(input: HashInput): Uint8Array {
-  const parts: Buffer[] = [];
-  parts.push(uint64BE(input.seq));
-  parts.push(int64BE(input.tsUnixNanos));
-  parts.push(utf8Plus0(input.actorUserId ?? ''));
-  parts.push(utf8Plus0(input.actorKind));
-  parts.push(utf8Plus0(input.domain ?? ''));
-  parts.push(utf8Plus0(input.subjectId ?? ''));
-  parts.push(utf8Plus0(input.subjectKind ?? ''));
-  parts.push(utf8Plus0(input.action));
-  parts.push(utf8Plus0(input.outcome));
-
-  const detailsBytes = Buffer.from(input.detailsJson, 'utf8');
-  parts.push(uint32BE(detailsBytes.byteLength));
-  parts.push(detailsBytes);
-
-  parts.push(Buffer.from(input.prevHash));
-
-  const canonical = Buffer.concat(parts);
-  return new Uint8Array(createHash('sha256').update(canonical).digest());
-}
-
-function utf8Plus0(s: string): Buffer {
-  const utf = Buffer.from(s, 'utf8');
-  const out = Buffer.allocUnsafe(utf.byteLength + 1);
-  utf.copy(out, 0);
-  out[utf.byteLength] = 0;
-  return out;
-}
-
-function uint64BE(v: bigint): Buffer {
-  if (v < 0n) {
-    throw new Error('uint64BE: negative value');
-  }
-  const b = Buffer.allocUnsafe(8);
-  b.writeBigUInt64BE(v);
-  return b;
-}
-
-function int64BE(v: bigint): Buffer {
-  const b = Buffer.allocUnsafe(8);
-  b.writeBigInt64BE(v);
-  return b;
-}
-
-function uint32BE(v: number): Buffer {
-  if (!Number.isInteger(v) || v < 0 || v > 0xffffffff) {
-    throw new Error('uint32BE: out of range');
-  }
-  const b = Buffer.allocUnsafe(4);
-  b.writeUInt32BE(v);
-  return b;
-}
+export { computeEntryHash } from '../../audit/chain.js';
 
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) {
@@ -329,7 +262,6 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 // Re-exports for tests.
 export const __INTERNAL_FOR_TESTS__ = {
-  computeEntryHash,
   ZERO_PREV_HASH,
 };
 

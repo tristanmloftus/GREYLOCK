@@ -29,7 +29,7 @@ describe('zeroize', () => {
     // Node tests — instead, simulate by replacing fill to throw.
     const original = Buffer.prototype.fill;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (Buffer.prototype as any).fill = function () {
         throw new Error('detached');
       };

@@ -16,7 +16,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json'],
-      include: ['lib/crypto/**/*.ts', 'lib/db/**/*.ts'],
+      include: ['lib/crypto/**/*.ts', 'lib/db/**/*.ts', 'lib/compute/**/*.ts'],
       exclude: [
         'lib/crypto/index.ts', // factory wiring; not all branches exercised in unit tests
         'lib/db/index.ts', // boot wiring + dynamic singleton; covered indirectly
@@ -35,6 +35,13 @@ export default defineConfig({
           lines: 80,
           functions: 80,
           branches: 70,
+          statements: 80,
+        },
+        // Per AGENT-COMPUTE brief / SPEC §QA-TEST: lib/compute/** ≥80%.
+        'lib/compute/**/*.ts': {
+          lines: 80,
+          functions: 80,
+          branches: 80,
           statements: 80,
         },
       },

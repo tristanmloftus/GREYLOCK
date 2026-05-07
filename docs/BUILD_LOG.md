@@ -4,6 +4,46 @@ Append-only record of orchestration decisions, agent spawns, QA verdicts, and ph
 
 ---
 
+## 2026-05-06 — Phase 3 — Plaid + Sync + Compute + Audit ✅
+
+Commit: pending — `feat(plaid): encrypted token storage, sync loop, compute, audit log`
+
+**Four parallel executor subagents (Opus) shipped:**
+
+| Agent | Owns | Headline |
+|---|---|---|
+| AGENT-PLAID | `lib/plaid/*` + `app/api/plaid/*` + 5 tests | 39 tests; `withDecryptedToken` is the sole plaintext-token scope. One workaround (placeholder zero-blob → `rewriteEncryptedToken({admin})`) because `ItemRepository.create` doesn't accept `id`; AAD-bound rewrite happens in the same `$transaction`. |
+| AGENT-SYNC | `lib/ipc/*` (protocol + peer-cred + server + client) + `lib/sync/*` + `scripts/sync.ts` + `app/api/sync/run` | 39 tests. HMAC handshake constant-time. Socket `0600` + `getuid()` parity (deviation from LOCAL_PEERCRED, equivalent in practice — tracked as L-5). Borrowed-DEK lifetime ≤ one item. Boot smoke test green. |
+| AGENT-COMPUTE | `lib/compute/*` + 6 golden fixtures + 6 test files | 90 tests, **100% coverage** on `lib/compute/**`. Pure throughout, bigint Cents end-to-end. |
+| AGENT-AUDIT-LOG | `lib/audit/{chain,sanitizer,service,index}.ts` + `app/api/admin/audit/*` | 64 tests. Chain canonicalization extracted to single source (`lib/audit/chain.ts`); repo imports from there. Sanitizer hard-rejects token-shape values **even at allowlisted keys**. |
+
+**Orchestrator-written admin CLI scripts (post-agent, `scripts/`):**
+- `_admin-boot.ts` — shared dev-only boot helper
+- `admin-audit-verify.ts`, `admin-revoke-all.ts`, `admin-revoke.ts`, `admin-enroll.ts` — fully wired
+- `admin-rotate-master.ts` — intentional stub printing "not yet implemented in v0.1" (Phase-5 wiring per QA-SEC P2 §M-3 recommendation)
+
+**Total: 424 tests across 32 files (+232 from Phase 2 baseline). 13.6 s.**
+
+**QA gates:**
+- `pnpm typecheck` — clean
+- `pnpm test` — 424/424
+- `pnpm lint` — 0 errors, 12 non-blocking warnings
+- `pnpm audit --prod --audit-level=high` — clean (1 moderate PostCSS, same as Phase 2 — M-1)
+- Manual QA-SEC sweep across 19 mandatory checklist items + 5 token traces
+
+**QA-SEC verdict: PASS WITH FOLLOW-UP** — `docs/qa/QA-SEC-phase-3.md`. **0 critical, 0 high.** One new low (L-5 `getuid()` parity vs `LOCAL_PEERCRED`) — fully mitigated by socket permissions; tracked for optional Phase-5 N-API binding. One new low (L-6 `pnpm.overrides` audit). Phase 2 mediums (M-1, M-2, M-3) carry forward to Phase 5. The security-reviewer subagent stalled past its 600 s watchdog (same pattern as Phase 2); manual sweep used the same checklist.
+
+**Recommendations for Phase 4 (UI):**
+- Generic error copy in UI; never echo `kind` strings.
+- Server components for data; client components only for Plaid Link, polling, modals.
+- `'self'`-only script/style/image sources from day 1 (CSP locks at Phase 5).
+
+---
+
+
+
+---
+
 ## 2026-05-06 — Phase 2 — Crypto + Auth + DB ✅
 
 Commit: pending — `feat(security): passkey auth, encrypted storage, zero-knowledge PCC keys`
