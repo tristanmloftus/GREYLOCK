@@ -25,6 +25,7 @@
 
 generator client {
   provider        = "prisma-client-js"
+  // driver adapters are GA in Prisma 6.x — no preview flag needed.
   previewFeatures = []
 }
 
@@ -454,4 +455,33 @@ model RateLimitBucket {
   windowStart DateTime
   count       Int      @default(0)
   updatedAt   DateTime @updatedAt
+}
+
+// -----------------------------------------------------------------------------
+// Enrollment tokens (single-use, time-limited URL grants for passkey enroll)
+// -----------------------------------------------------------------------------
+//
+// Added by AGENT-DB (Phase 2) so that `pnpm admin:enroll <email>` can mint a
+// short-lived URL with a hashed token. The token bytes are NEVER stored
+// plaintext — only `tokenHash` (SHA-256 of the random 32-byte token) is
+// persisted. Used-once: server records `usedAt` on first successful redemption
+// and rejects subsequent uses.
+//
+// AGENT-AUTH owns the EnrollmentTokenRepository INTERFACE in
+// `lib/auth/enrollment-token.ts`; AGENT-DB owns the concrete implementation in
+// `lib/db/repositories/enrollment-token.ts`. The shape here matches the
+// minimum AGENT-AUTH needs: lookup by tokenHash, mint, mark-used, reap-expired.
+model EnrollmentToken {
+  id        String    @id @default(cuid())
+  email     String
+  // SHA-256 hash of the random URL token. NEVER plaintext. Server compares
+  // SHA-256(supplied) against this column with constant-time equality at the
+  // service boundary.
+  tokenHash Bytes     @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
 }

@@ -1,10 +1,13 @@
-import next from 'eslint-config-next';
 import security from 'eslint-plugin-security';
 import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 
+// `eslint-config-next` is incompatible with ESLint 9's flat config
+// (RushStack patcher fails). Next.js's contribution is mostly Core Web
+// Vitals rules irrelevant to a paranoid localhost-only build. We rely
+// on `eslint-plugin-security` + strict `@typescript-eslint` instead.
+
 export default [
-  ...next,
   security.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
@@ -54,6 +57,20 @@ export default [
     files: ['scripts/**/*.ts'],
     rules: {
       'no-console': 'off',
+    },
+  },
+  {
+    // Tests trade strictness for ergonomics: inline `import()` types for
+    // generic helpers, non-null assertions for fixture access. Production
+    // code keeps the strict rules.
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      'no-console': 'off',
+      'security/detect-object-injection': 'off',
+      'security/detect-non-literal-fs-filename': 'off',
     },
   },
   {

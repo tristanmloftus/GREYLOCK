@@ -4,6 +4,40 @@ Append-only record of orchestration decisions, agent spawns, QA verdicts, and ph
 
 ---
 
+## 2026-05-06 — Phase 2 — Crypto + Auth + DB ✅
+
+Commit: pending — `feat(security): passkey auth, encrypted storage, zero-knowledge PCC keys`
+
+**Three parallel executor subagents (Opus) shipped:**
+
+| Agent | Owns | Headline |
+|---|---|---|
+| AGENT-CRYPTO | `lib/crypto/*` + 7 unit-test files | 104/104 tests; **99.21% lines / 100% functions / 93.75% branches** on `lib/crypto/**` (clears 90% gate). AAD scheme, blob format, scrypt N=2^17 byte-exact. |
+| AGENT-AUTH | `lib/auth/*` + 5 route handlers + `lib/runtime/services-registry.ts` | 46/46 tests. Allowlist + placeholder rejection at both flows, counter monotonicity, single-session-revoke + DEK zeroize, `SameSite=Strict; Secure; HttpOnly`, indistinguishable 404, rate limit, Zod everywhere. |
+| AGENT-DB | `lib/db/*` (13 repos + client + migrate + sqlcipher-key) + `prisma/migrations/20260507001726_init` + `EnrollmentToken` model | **23/23 scope-by-construction PRIVACY tests** + audit-chain + sqlcipher-roundtrip green. Picked `better-sqlite3-multiple-ciphers` aliased through `@prisma/adapter-better-sqlite3` via `pnpm.overrides`. |
+
+**Total: 192 tests across 16 files passing in 11 s.**
+
+**QA gates run by Orchestrator before commit:**
+- `pnpm typecheck` — clean
+- `pnpm test` — 192/192
+- `pnpm test --coverage tests/unit/crypto/` — `lib/crypto/**` 99.21% / 100% / 93.75% — clears 90% gate per SPEC §5
+- `pnpm lint` — 0 errors, 11 non-blocking warnings (relaxed test-file rules)
+- `pnpm audit --prod --audit-level=high` — clean (1 moderate transitive PostCSS XSS, below gate, not exploitable in static-CSS app — tracked as Phase 5 M-1)
+- Manual security sweep covering all 23 mandatory checklist items
+
+**QA-SEC verdict: PASS WITH FOLLOW-UP** — `docs/qa/QA-SEC-phase-2.md`. **0 critical, 0 high.** Three medium follow-ups for Phase 5: PostCSS bump (M-1), domain-type cleanup of `User.wrappedUserDek` + `Passkey.kekSalt` (M-2, currently bridged via `WrappedDekReader`), `RegistryOverrides` production guard (M-3). The security-reviewer subagent stalled past its 600s watchdog mid-audit; report compiled by Orchestrator from a focused manual sweep against the same checklist (token traces, AAD bytes, scope-by-construction SQL review, secret-handling, deps).
+
+**Tooling fixes during the phase:**
+- `next lint` deprecated and `eslint-config-next` broken on ESLint 9 (RushStack patcher rejects). Dropped both; relying on `eslint-plugin-security` + strict `@typescript-eslint`. Added test-file exemption block for `consistent-type-imports`, `no-non-null-assertion`, and noisy security false-positives.
+- One unused-variable error in audit repo cleaned up.
+
+---
+
+
+
+---
+
 ## 2026-05-06 — Phase 1 — Architecture ✅
 
 Commit: pending — `feat(arch): system architecture and contracts`
