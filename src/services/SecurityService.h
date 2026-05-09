@@ -1,14 +1,21 @@
 #pragma once
 
-#include <string>
-#include <optional>
-#include <windows.h>
-#include <wincred.h>
+// SecurityService.h — compatibility shim for v0.2.
+//
+// v0.1 used a free-function namespace SecurityService (Windows-only DPAPI +
+// registry).  v0.2 replaces that with the ISecretStore interface and two
+// platform implementations.  This header pulls in ISecretStore and the
+// platform-appropriate concrete type so any existing #include "SecurityService.h"
+// site continues to compile without changes.
+//
+// Call sites that used the old SecurityService:: free-functions should be
+// migrated to ISecretStore* / std::shared_ptr<ISecretStore> obtained from
+// ServiceContainer::get_secret_store().
 
-namespace SecurityService {
-    bool encrypt_data(const std::string& plaintext, std::string& ciphertext);
-    bool decrypt_data(const std::string& ciphertext, std::string& plaintext);
-    bool store_access_token(const std::string& account_id, const std::string& token);
-    std::optional<std::string> retrieve_access_token(const std::string& account_id);
-    bool delete_access_token(const std::string& account_id);
-}
+#include "ISecretStore.h"
+
+#ifdef _WIN32
+#include "secret_store/DpapiSecretStore.h"
+#elif defined(__APPLE__)
+#include "secret_store/KeychainSecretStore.h"
+#endif

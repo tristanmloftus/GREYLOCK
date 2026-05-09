@@ -11,6 +11,7 @@
 #include "services/StorageService.h"
 #include "services/PlaidService.h"
 #include "services/ServiceContainer.h"
+#include "services/SecurityService.h"
 #include "utils/Logger.h"
 #include "utils/ConfigManager.h"
 #include "views/DashboardView.h"
@@ -76,6 +77,13 @@ public:
         }
         plaid->initialize(client_id, secret, env);
         services.set_plaid(plaid);
+
+        // Wire platform-appropriate secret store.
+#ifdef _WIN32
+        services.set_secret_store(std::make_shared<DpapiSecretStore>());
+#elif defined(__APPLE__)
+        services.set_secret_store(std::make_shared<KeychainSecretStore>());
+#endif
 
         data_store.set_storage(storage);
 
