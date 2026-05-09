@@ -112,6 +112,14 @@ std::optional<HttpResponse> CurlHttpClient::send(const HttpRequest& req) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
+    // -- Optional CA bundle override (Phase 2: integration tests + dev certs) --
+    // When ca_bundle_path is set, libcurl uses that file as the sole trust
+    // anchor instead of the system bundle.  TLS verification is NOT weakened —
+    // this is a trust-anchor swap, not a verify bypass.
+    if (req.ca_bundle_path.has_value()) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, req.ca_bundle_path->c_str());
+    }
+
     // -- Timeouts (both connect and total transfer) --
     long timeout_ms = static_cast<long>(req.timeout.count());
     // Connect timeout: at most half the total timeout, minimum 5 s.

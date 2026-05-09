@@ -24,6 +24,17 @@ FetchContent_Declare(googletest
   GIT_TAG v1.14.0
 )
 
+# cpp-httplib: header-only C++ HTTP/HTTPS library used by TerminalFinanceServer.
+# HTTPS support requires OpenSSL (detected below) and the compile definition
+# CPPHTTPLIB_OPENSSL_SUPPORT (added to the server targets).
+# Using v0.18.5 which is the version specified in the plan.  cpp-httplib
+# supports port 0 (OS-assigned ephemeral port) via bind_to_port() +
+# listen_after_bind() — required by the integration test fixture.
+FetchContent_Declare(cpp-httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG        v0.18.5
+)
+
 set(gtest_force_static_RUNTIME TRUE)
 
 if(MSVC)
@@ -42,6 +53,21 @@ endif()
 FetchContent_MakeAvailable(ftxui)
 FetchContent_MakeAvailable(nlohmann_json)
 FetchContent_MakeAvailable(googletest)
+
+# cpp-httplib is header-only; FetchContent_MakeAvailable populates
+# cpp-httplib_SOURCE_DIR.  We create an INTERFACE library so targets
+# can just do target_link_libraries(... cpphttplib::cpphttplib).
+FetchContent_MakeAvailable(cpp-httplib)
+# cpp-httplib ships its own CMakeLists which creates the `httplib::httplib`
+# target.  We alias it for clarity.
+# (cpp-httplib's own CMake may or may not create a target depending on version;
+# guard both cases.)
+if(NOT TARGET httplib::httplib)
+  add_library(httplib::httplib INTERFACE IMPORTED)
+  set_target_properties(httplib::httplib PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${cpp-httplib_SOURCE_DIR}"
+  )
+endif()
 
 # --------------------------------------------------------------------------
 # Platform-specific dependencies
@@ -205,6 +231,42 @@ if(NOT _SODIUM_FOUND)
             "(e.g. apt install libsodium-dev) then re-run cmake.")
     endif()
 endif()
+
+# --------------------------------------------------------------------------
+# OpenSSL — required by cpp-httplib for HTTPS server (Phase 2+).
+#
+# macOS: Homebrew openssl@3 is preferred over the SDK LibreSSL.
+#   cpp-httplib requires a real OpenSSL (≥ 1.1.1); LibreSSL has API
+#   differences that break SSL_CTX_set_min_proto_version and other calls.
+#   We probe `brew --prefix openssl@3` and set OPENSSL_ROOT_DIR so that
+#   CMake's FindOpenSSL.cmake picks up Homebrew's installation.
+#
+# Windows: vcpkg installs openssl; find_package(OpenSSL REQUIRED) resolves
+#   via the vcpkg toolchain file (set at configure time via
+#   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake).
+# --------------------------------------------------------------------------
+if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+  find_program(_BREW_BIN_SSL brew)
+  if(_BREW_BIN_SSL)
+    execute_process(
+      COMMAND "${_BREW_BIN_SSL}" --prefix openssl@3
+      OUTPUT_VARIABLE _BREW_OPENSSL_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _BREW_OPENSSL_RESULT
+      ERROR_QUIET
+    )
+    if(_BREW_OPENSSL_RESULT EQUAL 0 AND IS_DIRECTORY "${_BREW_OPENSSL_PREFIX}")
+      set(OPENSSL_ROOT_DIR "${_BREW_OPENSSL_PREFIX}" CACHE PATH
+          "Homebrew openssl@3 prefix" FORCE)
+      message(STATUS "OpenSSL: using Homebrew openssl@3 at ${OPENSSL_ROOT_DIR}")
+    endif()
+  endif()
+endif()
+
+find_package(OpenSSL REQUIRED)
+message(STATUS "OpenSSL: version ${OPENSSL_VERSION}, "
+               "libraries ${OPENSSL_LIBRARIES}, "
+               "include dir ${OPENSSL_INCLUDE_DIR}")
 
 # --------------------------------------------------------------------------
 # Platform-specific source files for the secret store
@@ -395,3 +457,86 @@ target_link_libraries(CryptoTests PRIVATE
 )
 
 add_test(NAME CryptoTests COMMAND CryptoTests)
+
+# --------------------------------------------------------------------------
+# Server sources (shared between TerminalFinanceServer and ServerHealthzTests)
+# --------------------------------------------------------------------------
+set(SERVER_SOURCES
+  server/http/Server.cpp
+  server/http/HealthzHandler.cpp
+)
+
+# --------------------------------------------------------------------------
+# TerminalFinanceServer
+# The HTTPS server binary.  Does NOT link ftxui, libsodium, or libcurl.
+# Dependencies: cpp-httplib (header-only), OpenSSL (for TLS), nlohmann/json.
+#
+# CPPHTTPLIB_OPENSSL_SUPPORT enables the SSLServer code path in httplib.h.
+# It must be defined for every translation unit that includes httplib.h.
+# We set it as a target compile definition so it propagates transitively.
+# --------------------------------------------------------------------------
+add_executable(TerminalFinanceServer server/main.cpp ${SERVER_SOURCES})
+
+target_include_directories(TerminalFinanceServer PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${cpp-httplib_SOURCE_DIR}"
+  ${OPENSSL_INCLUDE_DIR}
+)
+
+target_compile_definitions(TerminalFinanceServer PRIVATE
+  CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_link_libraries(TerminalFinanceServer PRIVATE
+  OpenSSL::SSL
+  OpenSSL::Crypto
+  nlohmann_json::nlohmann_json
+)
+
+# --------------------------------------------------------------------------
+# ServerHealthzTests
+# Integration tests for the /healthz endpoint.  Boots a Server on an
+# ephemeral port (port 0) and sends requests via CurlHttpClient.
+#
+# Cert source: checked-in tests/fixtures/ (generated by mkcert; committed so
+# CI runners never need mkcert installed).
+#
+# TF_FIXTURES_DIR is passed as a compile definition so the test can locate
+# the cert files at runtime regardless of where ctest is invoked from.
+# --------------------------------------------------------------------------
+add_executable(ServerHealthzTests
+  tests/test_server_healthz.cpp
+  ${SERVER_SOURCES}
+  src/services/http/CurlHttpClient.cpp
+)
+
+if(MSVC)
+  target_compile_options(ServerHealthzTests PRIVATE /MT)
+endif()
+
+target_include_directories(ServerHealthzTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${cpp-httplib_SOURCE_DIR}"
+  ${OPENSSL_INCLUDE_DIR}
+)
+
+target_compile_definitions(ServerHealthzTests PRIVATE
+  CPPHTTPLIB_OPENSSL_SUPPORT
+  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+)
+
+target_link_libraries(ServerHealthzTests PRIVATE
+  gtest
+  gtest_main
+  OpenSSL::SSL
+  OpenSSL::Crypto
+  nlohmann_json::nlohmann_json
+)
+
+if(WIN32)
+  target_link_libraries(ServerHealthzTests PRIVATE CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(ServerHealthzTests PRIVATE CURL::libcurl)
+endif()
+
+add_test(NAME ServerHealthzTests COMMAND ServerHealthzTests)
