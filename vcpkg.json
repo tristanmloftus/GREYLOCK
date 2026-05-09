@@ -5,7 +5,11 @@
   "description": "TerminalFinance v0.2 Windows dependency manifest",
   "dependencies": [
     "libsodium",
-    "curl",
+    {
+      "name": "curl",
+      "default-features": false,
+      "features": ["openssl", "non-http"]
+    },
     "openssl"
   ]
 }
