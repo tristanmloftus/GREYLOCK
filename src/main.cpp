@@ -3,8 +3,18 @@
 #include <ftxui/dom/elements.hpp>
 #include <iostream>
 #include <ctime>
+#include <cstdlib>
 #include <memory>
 #include <algorithm>
+#include <string>
+#include <string_view>
+
+#ifndef _WIN32
+#  include <termios.h>
+#  include <unistd.h>
+#else
+#  include <conio.h>
+#endif
 
 #include <sodium.h>
 
@@ -16,6 +26,7 @@
 #include "services/SecurityService.h"
 #include "services/http/CurlHttpClient.h"
 #include "services/BackendClient.h"
+#include "services/AuthService.h"
 #include "utils/Logger.h"
 #include "utils/ConfigManager.h"
 #include "views/DashboardView.h"
@@ -226,7 +237,236 @@ public:
     }
 };
 
-int main() {
+// --------------------------------------------------------------------------
+// CLI helpers
+// --------------------------------------------------------------------------
+
+// Read a line from stdin with the prompt printed to stdout.
+// The input IS echoed to the terminal (passphrase echo-disable is a v0.3 task).
+static std::string prompt_line(const std::string& prompt_text) {
+    std::cout << prompt_text << std::flush;
+    std::string line;
+    std::getline(std::cin, line);
+    return line;
+}
+
+// Read a passphrase from stdin.
+// TODO v0.3: disable terminal echo for passphrase input (platform-specific:
+//   POSIX: tcgetattr/tcsetattr with ~ECHO; Windows: _getch loop).
+// In v0.2 the passphrase WILL appear on screen as the user types.
+// This is a known gap documented here per task guardrail.
+static std::string prompt_passphrase(const std::string& prompt_text) {
+#ifndef _WIN32
+    // POSIX: disable echo
+    struct termios old_attrs{};
+    bool echo_disabled = false;
+    if (isatty(STDIN_FILENO)) {
+        if (tcgetattr(STDIN_FILENO, &old_attrs) == 0) {
+            struct termios new_attrs = old_attrs;
+            new_attrs.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+            if (tcsetattr(STDIN_FILENO, TCSANOW, &new_attrs) == 0) {
+                echo_disabled = true;
+            }
+        }
+    }
+    std::cout << prompt_text << std::flush;
+    std::string pass;
+    std::getline(std::cin, pass);
+    if (echo_disabled) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &old_attrs);
+        std::cout << "\n" << std::flush; // print newline since echo was off
+    }
+    return pass;
+#else
+    // Windows: read char-by-char without echo using _getch
+    std::cout << prompt_text << std::flush;
+    std::string pass;
+    int ch;
+    while ((ch = _getch()) != '\r' && ch != '\n' && ch != EOF) {
+        if (ch == '\b') {
+            // backspace
+            if (!pass.empty()) {
+                pass.pop_back();
+            }
+        } else {
+            pass += static_cast<char>(ch);
+        }
+    }
+    std::cout << "\n" << std::flush;
+    return pass;
+#endif
+}
+
+// Build an AuthService from the service container and TF_USER_EMAIL env var.
+// If email is needed but unset, prompts interactively.
+static std::shared_ptr<AuthService> make_auth_service(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets,
+    std::string& email_out)
+{
+    const char* env_email = std::getenv("TF_USER_EMAIL");
+    std::string email = (env_email && env_email[0] != '\0') ? std::string(env_email) : "";
+    if (email.empty()) {
+        email = prompt_line("Email: ");
+    }
+    email_out = email;
+    return std::make_shared<AuthService>(backend, secrets, email);
+}
+
+// --------------------------------------------------------------------------
+// CLI flag handlers
+// --------------------------------------------------------------------------
+
+// --enroll <token>
+static int cmd_enroll(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets,
+    const std::string& enroll_token)
+{
+    std::string email;
+    auto auth = make_auth_service(backend, secrets, email);
+
+    EnrollRequest req;
+    req.token     = enroll_token;
+    req.email     = email;
+    req.passphrase = prompt_passphrase("Passphrase (new): ");
+
+    std::string passphrase_confirm = prompt_passphrase("Passphrase (confirm): ");
+    if (req.passphrase != passphrase_confirm) {
+        sodium_memzero(req.passphrase.data(), req.passphrase.size());
+        sodium_memzero(passphrase_confirm.data(), passphrase_confirm.size());
+        std::cerr << "Error: passphrases do not match." << std::endl;
+        return 1;
+    }
+    sodium_memzero(passphrase_confirm.data(), passphrase_confirm.size());
+
+    // TOTP: server will generate one; the provisioning URI comes back.
+    // No local TOTP secret is supplied here.
+
+    auto result = auth->enroll(req);
+
+    // Zeroize the passphrase from memory after use.
+    sodium_memzero(req.passphrase.data(), req.passphrase.size());
+
+    if (std::holds_alternative<BackendError>(result)) {
+        const auto& err = std::get<BackendError>(result);
+        std::cerr << "Enrollment failed: " << err.message
+                  << " (code: " << err.code << ")" << std::endl;
+        return 1;
+    }
+
+    const auto& er = std::get<EnrollResult>(result);
+    std::cout << "Enrollment successful. User ID: " << er.user_id << "\n";
+    std::cout << "TOTP provisioning URI (scan into your authenticator app):\n"
+              << er.totp_provisioning_uri << "\n";
+    std::cout << "Run --login to authenticate and cache your session." << std::endl;
+    return 0;
+}
+
+// --login
+static int cmd_login(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets)
+{
+    std::string email;
+    auto auth = make_auth_service(backend, secrets, email);
+
+    LoginRequest req;
+    req.email     = email;
+    req.passphrase = prompt_passphrase("Passphrase: ");
+    req.totp_code  = prompt_line("TOTP code (6 digits): ");
+
+    auto result = auth->login(req);
+
+    // Zeroize sensitive fields after the call.
+    sodium_memzero(req.passphrase.data(), req.passphrase.size());
+    sodium_memzero(req.totp_code.data(), req.totp_code.size());
+
+    if (std::holds_alternative<BackendError>(result)) {
+        const auto& err = std::get<BackendError>(result);
+        std::cerr << "Login failed: " << err.message
+                  << " (code: " << err.code << ")" << std::endl;
+        return 1;
+    }
+
+    const auto& lr = std::get<LoginResult>(result);
+    std::cout << "Login successful. User ID: " << lr.user_id << "\n"
+              << "Session expires at (unix): " << lr.expires_at_unix << std::endl;
+    return 0;
+}
+
+// --logout
+static int cmd_logout(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets)
+{
+    std::string email;
+    auto auth = make_auth_service(backend, secrets, email);
+
+    if (!auth->logout()) {
+        std::cerr << "Logout failed (transport error). Session cache unchanged." << std::endl;
+        return 1;
+    }
+
+    std::cout << "Logged out successfully." << std::endl;
+    return 0;
+}
+
+// --whoami
+static int cmd_whoami(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets)
+{
+    std::string email;
+    auto auth = make_auth_service(backend, secrets, email);
+
+    auto user_id = auth->current_user_id();
+    if (!user_id.has_value()) {
+        std::cout << "Not logged in." << std::endl;
+        return 0;
+    }
+    std::cout << "Logged in as: " << *user_id << std::endl;
+    return 0;
+}
+
+// --------------------------------------------------------------------------
+// Shared service wiring (used by both CLI and TUI paths)
+// --------------------------------------------------------------------------
+
+struct CoreServices {
+    std::shared_ptr<CurlHttpClient> http_client;
+    std::shared_ptr<BackendClient>  backend;
+    std::shared_ptr<ISecretStore>   secrets;
+};
+
+static CoreServices build_core_services() {
+    CoreServices s;
+    s.http_client = std::make_shared<CurlHttpClient>();
+
+    const char* backend_url_env = std::getenv("TF_BACKEND_URL");
+    std::string backend_url = (backend_url_env && backend_url_env[0] != '\0')
+        ? std::string(backend_url_env)
+        : "https://localhost:8443";
+    try {
+        s.backend = std::make_shared<BackendClient>(s.http_client, backend_url);
+    } catch (const std::invalid_argument& e) {
+        Logger::instance().warning(std::string("BackendClient not created: ") + e.what());
+    }
+
+#ifdef _WIN32
+    s.secrets = std::make_shared<DpapiSecretStore>();
+#elif defined(__APPLE__)
+    s.secrets = std::make_shared<KeychainSecretStore>();
+#endif
+
+    return s;
+}
+
+// --------------------------------------------------------------------------
+// main
+// --------------------------------------------------------------------------
+
+int main(int argc, char** argv) {
     // libsodium initialization. Must happen before any crypto primitive is
     // used. Returns -1 on failure (fatal), 0 on first success, 1 if already
     // initialized. The crypto functions also self-init defensively, but
@@ -235,6 +475,92 @@ int main() {
     if (sodium_init() < 0) {
         std::cerr << "FATAL: sodium_init() failed; crypto unavailable" << std::endl;
         return 1;
+    }
+
+    // ------------------------------------------------------------------
+    // CLI flag dispatch — must happen BEFORE the App/FTXUI initialisation
+    // so non-TUI modes exit cleanly without starting a full-screen UI.
+    // ------------------------------------------------------------------
+    auto core = build_core_services();
+
+    if (argc >= 2) {
+        std::string_view flag(argv[1]);
+
+        if (flag == "--enroll") {
+            if (argc < 3) {
+                std::cerr << "Usage: TerminalFinance --enroll <token>" << std::endl;
+                return 1;
+            }
+            std::string enroll_token(argv[2]);
+            if (!core.backend) {
+                std::cerr << "Error: BackendClient not initialized (bad TF_BACKEND_URL?)" << std::endl;
+                return 1;
+            }
+            if (!core.secrets) {
+                std::cerr << "Error: SecretStore not available on this platform." << std::endl;
+                return 1;
+            }
+            return cmd_enroll(core.backend, core.secrets, enroll_token);
+        }
+
+        if (flag == "--login") {
+            if (!core.backend) {
+                std::cerr << "Error: BackendClient not initialized (bad TF_BACKEND_URL?)" << std::endl;
+                return 1;
+            }
+            if (!core.secrets) {
+                std::cerr << "Error: SecretStore not available on this platform." << std::endl;
+                return 1;
+            }
+            return cmd_login(core.backend, core.secrets);
+        }
+
+        if (flag == "--logout") {
+            if (!core.backend) {
+                std::cerr << "Error: BackendClient not initialized (bad TF_BACKEND_URL?)" << std::endl;
+                return 1;
+            }
+            if (!core.secrets) {
+                std::cerr << "Error: SecretStore not available on this platform." << std::endl;
+                return 1;
+            }
+            return cmd_logout(core.backend, core.secrets);
+        }
+
+        if (flag == "--whoami") {
+            if (!core.backend) {
+                std::cerr << "Error: BackendClient not initialized (bad TF_BACKEND_URL?)" << std::endl;
+                return 1;
+            }
+            if (!core.secrets) {
+                std::cerr << "Error: SecretStore not available on this platform." << std::endl;
+                return 1;
+            }
+            return cmd_whoami(core.backend, core.secrets);
+        }
+
+        std::cerr << "Unknown flag: " << flag << "\n"
+                  << "Usage: TerminalFinance [--enroll <token>|--login|--logout|--whoami]"
+                  << std::endl;
+        return 1;
+    }
+
+    // ------------------------------------------------------------------
+    // Default: launch the TUI. First verify the user has a valid session.
+    // ------------------------------------------------------------------
+    if (core.backend && core.secrets) {
+        const char* env_email = std::getenv("TF_USER_EMAIL");
+        std::string email = (env_email && env_email[0] != '\0') ? std::string(env_email) : "";
+        if (!email.empty()) {
+            AuthService auth_check(core.backend, core.secrets, email);
+            auto user_id = auth_check.current_user_id();
+            if (!user_id.has_value()) {
+                std::cerr << "Please run with --login first." << std::endl;
+                return 1;
+            }
+        }
+        // If TF_USER_EMAIL is unset, skip the auth gate — operator may not have
+        // configured email yet. The TUI will still work in an unauthenticated state.
     }
 
     auto screen = ScreenInteractive::Fullscreen();

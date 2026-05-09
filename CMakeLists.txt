@@ -688,3 +688,52 @@ elseif(APPLE)
 endif()
 
 add_test(NAME BackendClientTests COMMAND BackendClientTests)
+
+# ==========================================================================
+# Phase 3.B additions — AuthService (TUI side) + AuthServiceTests
+# ALL additions below this line were added by 3.B.  Do not move them above
+# the existing target definitions to avoid merge conflicts.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# AuthService.cpp added to the TerminalFinance executable source list.
+# Using target_sources() here (after add_executable) so the 3.B change is
+# localised to the END of the file — consistent with how 2.B added server
+# DB sources to TerminalFinanceServer.
+# [3.B EXTENSION: TerminalFinance source list extended here]
+# --------------------------------------------------------------------------
+target_sources(TerminalFinance PRIVATE src/services/AuthService.cpp)
+
+# --------------------------------------------------------------------------
+# AuthServiceTests
+# Unit tests for AuthService — FakeHttpClient + FakeSecretStore only;
+# no network required, no server subprocess.
+# --------------------------------------------------------------------------
+add_executable(AuthServiceTests
+  tests/test_auth_service.cpp
+  ${COMMON_SOURCES}
+  src/services/AuthService.cpp
+)
+
+if(MSVC)
+  target_compile_options(AuthServiceTests PRIVATE /MT)
+endif()
+
+target_link_libraries(AuthServiceTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+
+if(WIN32)
+  target_link_libraries(AuthServiceTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(AuthServiceTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME AuthServiceTests COMMAND AuthServiceTests)

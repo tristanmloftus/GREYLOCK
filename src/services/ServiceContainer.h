@@ -8,6 +8,7 @@
 #include "ISecretStore.h"
 #include "IHttpClient.h"
 #include "BackendClient.h"
+#include "AuthService.h"
 
 class ServiceContainer {
 public:
@@ -33,6 +34,11 @@ public:
         backend_client_ = service;
     }
 
+    // [3.B EXTENSION: AuthService slot]
+    void set_auth_service(std::shared_ptr<AuthService> service) {
+        auth_service_ = service;
+    }
+
     std::shared_ptr<IStorageService> get_storage() {
         return storage_;
     }
@@ -51,6 +57,10 @@ public:
 
     std::shared_ptr<BackendClient> get_backend_client() {
         return backend_client_;
+    }
+
+    std::shared_ptr<AuthService> get_auth_service() {
+        return auth_service_;
     }
 
     IStorageService& storage() {
@@ -78,11 +88,17 @@ public:
         return *backend_client_;
     }
 
+    AuthService& auth_service() {
+        if (!auth_service_) throw std::runtime_error("Auth service not initialized");
+        return *auth_service_;
+    }
+
     bool has_storage() const { return storage_ != nullptr; }
     bool has_plaid() const { return plaid_ != nullptr; }
     bool has_secret_store() const { return secret_store_ != nullptr; }
     bool has_http_client() const { return http_client_ != nullptr; }
     bool has_backend_client() const { return backend_client_ != nullptr; }
+    bool has_auth_service() const { return auth_service_ != nullptr; }
 
 private:
     std::shared_ptr<IStorageService> storage_;
@@ -90,4 +106,5 @@ private:
     std::shared_ptr<ISecretStore> secret_store_;
     std::shared_ptr<IHttpClient> http_client_;
     std::shared_ptr<BackendClient> backend_client_;
+    std::shared_ptr<AuthService> auth_service_;
 };
