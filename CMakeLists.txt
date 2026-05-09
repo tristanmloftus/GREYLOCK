@@ -31,6 +31,14 @@ if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY_REL "MultiThreaded")
 endif()
 
+# Windows: suppress the legacy <windows.h> min/max macros project-wide so
+# std::min / std::max don't collide. <curl/curl.h> transitively pulls in
+# <windows.h> on Windows, so any TU that uses both std::max and curl will
+# break without this. NOMINMAX is project-policy, not per-file.
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
+
 FetchContent_MakeAvailable(ftxui)
 FetchContent_MakeAvailable(nlohmann_json)
 FetchContent_MakeAvailable(googletest)
