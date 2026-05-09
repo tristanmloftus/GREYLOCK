@@ -52,9 +52,27 @@ FetchContent_MakeAvailable(googletest)
 #
 # Windows: vcpkg installs libcurl; find_package resolves via the vcpkg
 # toolchain. Triplet x64-windows-static is required (see BUILD.md).
-if(APPLE)
-  # Point CMake at the Homebrew keg before system paths.
-  set(CURL_ROOT "/usr/local/opt/curl" CACHE PATH "Homebrew curl prefix" FORCE)
+if(APPLE AND NOT DEFINED CURL_ROOT)
+  # Resolve Homebrew's curl prefix at configure time so the build is portable
+  # across Apple Silicon (`/opt/homebrew/opt/curl`) and Intel
+  # (`/usr/local/opt/curl`). `macos-latest` GitHub Actions runners are arm64;
+  # a hardcoded `/usr/local/opt/curl` would fail there.
+  find_program(_BREW_BIN brew)
+  if(_BREW_BIN)
+    execute_process(
+      COMMAND "${_BREW_BIN}" --prefix curl
+      OUTPUT_VARIABLE _BREW_CURL_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _BREW_RESULT
+      ERROR_QUIET
+    )
+    if(_BREW_RESULT EQUAL 0 AND IS_DIRECTORY "${_BREW_CURL_PREFIX}")
+      set(CURL_ROOT "${_BREW_CURL_PREFIX}" CACHE PATH "Homebrew curl prefix" FORCE)
+      message(STATUS "Using Homebrew curl at ${CURL_ROOT}")
+    endif()
+  endif()
+  # If brew was not found or did not return a prefix, fall through to
+  # `find_package(CURL)` which will use the SDK system curl.
 endif()
 find_package(CURL REQUIRED)
 
