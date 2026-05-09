@@ -540,3 +540,93 @@ elseif(APPLE)
 endif()
 
 add_test(NAME ServerHealthzTests COMMAND ServerHealthzTests)
+
+# ==========================================================================
+# Phase 2.B additions — SQLite + migrations layer
+# ALL additions below this line were added by 2.B.  Do not move them above
+# the existing target definitions to avoid 2.C merge conflicts.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# SQLite amalgamation via FetchContent.
+#
+# Version pin: 3.46.1 (2024-08-13).  Change SQLITE_AMALGAMATION_VERSION to
+# pick up a different release; the URL is computed from the version below.
+# The amalgamation zip ships sqlite3.c + sqlite3.h as a single self-contained
+# compilation unit — no Autotools, no configure step, no cmake required.
+#
+# Pinning strategy: version + SHA256 hash are the canonical pin.  The hash
+# below was computed against the official sqlite.org zip on 2026-05-09.
+# Update both fields together when upgrading sqlite.
+#
+# Windows: the static lib links into TerminalFinanceServer and MigrationsTests.
+# macOS:   same.
+# TUI (TerminalFinance): does NOT link sqlite3 — storage goes through BackendClient.
+# --------------------------------------------------------------------------
+set(SQLITE_AMALGAMATION_VERSION "3460100"
+    CACHE STRING "SQLite amalgamation version number (e.g. 3460100 for 3.46.1)")
+
+FetchContent_Declare(sqlite
+  URL "https://www.sqlite.org/2024/sqlite-amalgamation-${SQLITE_AMALGAMATION_VERSION}.zip"
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(sqlite)
+
+# Build the amalgamation as a static library so it compiles once and links
+# into multiple targets without ODR violations.
+if(NOT TARGET sqlite3)
+  add_library(sqlite3 STATIC "${sqlite_SOURCE_DIR}/sqlite3.c")
+  target_include_directories(sqlite3 PUBLIC "${sqlite_SOURCE_DIR}")
+  # Suppress MSVC warnings in the amalgamation (not our code).
+  if(MSVC)
+    target_compile_options(sqlite3 PRIVATE /W0)
+  else()
+    target_compile_options(sqlite3 PRIVATE -w)
+  endif()
+endif()
+
+# --------------------------------------------------------------------------
+# Server DB sources (Database + Migrations).
+# These are added to TerminalFinanceServer via target_sources() so we do NOT
+# need to modify the existing add_executable() line — minimizing 2.C conflict.
+# [2.B EXTENSION: TerminalFinanceServer source list extended here]
+# --------------------------------------------------------------------------
+set(SERVER_DB_SOURCES
+  server/db/Database.cpp
+  server/db/Migrations.cpp
+)
+
+target_sources(TerminalFinanceServer PRIVATE ${SERVER_DB_SOURCES})
+
+target_include_directories(TerminalFinanceServer PRIVATE
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(TerminalFinanceServer PRIVATE sqlite3)
+
+# --------------------------------------------------------------------------
+# MigrationsTests
+# Unit tests for the Migrations framework and M001_initial_schema.
+# Uses an in-memory SQLite database (:memory:) — no disk files, no cert setup.
+# --------------------------------------------------------------------------
+add_executable(MigrationsTests
+  tests/test_migrations.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(MigrationsTests PRIVATE /MT)
+endif()
+
+target_include_directories(MigrationsTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(MigrationsTests PRIVATE
+  gtest
+  gtest_main
+  sqlite3
+)
+
+add_test(NAME MigrationsTests COMMAND MigrationsTests)

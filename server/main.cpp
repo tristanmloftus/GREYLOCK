@@ -1,7 +1,10 @@
 #include "http/Server.h"
+#include "db/Database.h"
+#include "db/Migrations.h"
 
 #include <cstdlib>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -63,11 +66,51 @@ int main() {
     cfg.key_path  = env_or("TF_SERVER_KEY_PATH",  "dev/key.pem");
     cfg.bind_addr = env_or("TF_SERVER_BIND_ADDR", "127.0.0.1");
 
+    // -----------------------------------------------------------------------
+    // Database path.
+    //   TF_DB_PATH  default dev/terminalfinance.db
+    // -----------------------------------------------------------------------
+    std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
+
     std::cout << "TerminalFinance server v0.2\n"
               << "  bind_addr : " << cfg.bind_addr << "\n"
               << "  port      : " << cfg.port      << "\n"
               << "  cert_path : " << cfg.cert_path << "\n"
-              << "  key_path  : " << cfg.key_path  << "\n\n";
+              << "  key_path  : " << cfg.key_path  << "\n"
+              << "  db_path   : " << db_path        << "\n\n";
+
+    // -----------------------------------------------------------------------
+    // Open the database and apply schema migrations.
+    // The dev/ directory is gitignored.  Create it if it does not exist so the
+    // first run doesn't fail with "unable to open database file".
+    // -----------------------------------------------------------------------
+    {
+        std::filesystem::path db_file_path(db_path);
+        if (db_file_path.has_parent_path()) {
+            std::error_code ec;
+            std::filesystem::create_directories(db_file_path.parent_path(), ec);
+            if (ec) {
+                std::cerr << "ERROR: could not create database directory '"
+                          << db_file_path.parent_path().string()
+                          << "': " << ec.message() << "\n";
+                return 1;
+            }
+        }
+    }
+
+    Database db(db_path);
+
+    Migrations migrations;
+    migrations.register_migration({1, "M001_initial_schema", M001_initial_schema_up});
+
+    try {
+        migrations.apply_pending(db);
+        int ver = migrations.current_version(db);
+        std::cout << "Database schema at version " << ver << " (all migrations applied).\n\n";
+    } catch (const std::exception& ex) {
+        std::cerr << "ERROR: schema migration failed: " << ex.what() << "\n";
+        return 1;
+    }
 
     Server server(cfg);
     server.register_routes();
