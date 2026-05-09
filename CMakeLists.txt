@@ -580,7 +580,11 @@ if(NOT TARGET sqlite3)
   target_include_directories(sqlite3 PUBLIC "${sqlite_SOURCE_DIR}")
   # Suppress MSVC warnings in the amalgamation (not our code).
   if(MSVC)
-    target_compile_options(sqlite3 PRIVATE /W0)
+    target_compile_options(sqlite3 PRIVATE /W0 /MT)
+    # /MT must match the test executables that link sqlite3 (DataStoreTests,
+    # MigrationsTests, etc. all set /MT). Without this match, sqlite3.lib
+    # references CRT imports (__imp_strspn, _beginthreadex, _endthreadex) that
+    # don't resolve against the static CRT.
   else()
     target_compile_options(sqlite3 PRIVATE -w)
   endif()
