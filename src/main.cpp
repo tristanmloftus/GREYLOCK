@@ -12,6 +12,7 @@
 #include "services/PlaidService.h"
 #include "services/ServiceContainer.h"
 #include "services/SecurityService.h"
+#include "services/http/CurlHttpClient.h"
 #include "utils/Logger.h"
 #include "utils/ConfigManager.h"
 #include "views/DashboardView.h"
@@ -53,6 +54,10 @@ public:
         auto storage = std::make_shared<JsonStorageService>(storage_path);
         services.set_storage(storage);
 
+        // Wire the HTTP client (libcurl). Used by PlaidService and future services.
+        auto http_client = std::make_shared<CurlHttpClient>();
+        services.set_http_client(http_client);
+
         auto client_id_opt = ConfigManager::instance().get_plaid_client_id();
         auto secret_opt = ConfigManager::instance().get_plaid_secret();
         auto env_opt = ConfigManager::instance().get_plaid_environment();
@@ -71,7 +76,7 @@ public:
         if (!client_id.empty() && !secret.empty()) {
             use_stub = false;
         }
-        auto plaid = create_plaid_service(use_stub);
+        auto plaid = create_plaid_service(use_stub, http_client);
         if (use_stub) {
             Logger::instance().warning("Using stub Plaid service - no credentials configured");
         }

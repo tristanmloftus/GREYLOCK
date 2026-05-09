@@ -39,12 +39,24 @@ FetchContent_MakeAvailable(googletest)
 # Platform-specific dependencies
 # --------------------------------------------------------------------------
 
-# libcurl: used on macOS (replaces winhttp for future http-client work).
-# On Windows, winhttp is used directly by PlaidService; libcurl is declared
-# in vcpkg.json for future IHttpClient work (0.B).
+# libcurl: the sole HTTP backend on both macOS and Windows.
+# Phase 0.B makes CURL the universal transport; winhttp is no longer used.
+#
+# macOS CURL_ROOT decision: prefer Homebrew curl (/usr/local/opt/curl) over
+# the SDK system curl (/Library/Developer/CommandLineTools/SDKs/…/usr/lib).
+# Rationale: Homebrew curl 8.x ships HTTP/2, HTTP/3, modern TLS via OpenSSL
+# 3.x, and a real dylib (not a .tbd stub). The SDK curl is version-pinned to
+# Apple's release cadence and, as a .tbd, links against SecureTransport
+# rather than OpenSSL — fine for basic HTTPS but less capable. Since
+# Homebrew curl is already installed (Brewfile), prefer it explicitly.
+#
+# Windows: vcpkg installs libcurl; find_package resolves via the vcpkg
+# toolchain. Triplet x64-windows-static is required (see BUILD.md).
 if(APPLE)
-  find_package(CURL REQUIRED)
+  # Point CMake at the Homebrew keg before system paths.
+  set(CURL_ROOT "/usr/local/opt/curl" CACHE PATH "Homebrew curl prefix" FORCE)
 endif()
+find_package(CURL REQUIRED)
 
 # --------------------------------------------------------------------------
 # Platform-specific source files for the secret store
@@ -74,6 +86,7 @@ set(COMMON_SOURCES
   src/services/StorageService.cpp
   src/services/DiscoveryService.cpp
   src/services/ConsolidationService.cpp
+  src/services/http/CurlHttpClient.cpp
   src/utils/SyntheticGenerator.cpp
   src/utils/Validator.cpp
   src/utils/ConfigManager.cpp
@@ -99,7 +112,10 @@ target_link_libraries(TerminalFinance PRIVATE
 )
 
 if(WIN32)
-  target_link_libraries(TerminalFinance PRIVATE crypt32 winhttp advapi32)
+  # winhttp removed: PlaidService no longer uses WinHTTP; all HTTP goes through
+  # CurlHttpClient. crypt32 and advapi32 remain for DpapiSecretStore.
+  # Verify with: grep -r winhttp src/ -- should return nothing.
+  target_link_libraries(TerminalFinance PRIVATE crypt32 advapi32 CURL::libcurl)
 elseif(APPLE)
   target_link_libraries(TerminalFinance PRIVATE
     "-framework Security"
@@ -124,7 +140,7 @@ target_link_libraries(DataStoreTests PRIVATE
 )
 
 if(WIN32)
-  target_link_libraries(DataStoreTests PRIVATE crypt32 winhttp advapi32)
+  target_link_libraries(DataStoreTests PRIVATE crypt32 advapi32 CURL::libcurl)
 elseif(APPLE)
   target_link_libraries(DataStoreTests PRIVATE
     "-framework Security"
@@ -134,3 +150,34 @@ elseif(APPLE)
 endif()
 
 add_test(NAME DataStoreTests COMMAND DataStoreTests)
+
+# --------------------------------------------------------------------------
+# CurlHttpClientTests
+# Tests for the IHttpClient abstraction and CurlHttpClient implementation.
+# Network-touching tests are gated behind TF_NETWORK_TESTS=1.
+# --------------------------------------------------------------------------
+add_executable(CurlHttpClientTests tests/test_curl_http_client.cpp ${COMMON_SOURCES})
+
+if(MSVC)
+  target_compile_options(CurlHttpClientTests PRIVATE /MT)
+endif()
+
+target_link_libraries(CurlHttpClientTests PRIVATE
+    gtest
+    gtest_main
+    nlohmann_json::nlohmann_json
+)
+
+if(WIN32)
+  target_link_libraries(CurlHttpClientTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(CurlHttpClientTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+# Run the non-network tests by default. The network tests skip themselves
+# unless TF_NETWORK_TESTS=1 is set in the environment.
+add_test(NAME CurlHttpClientTests COMMAND CurlHttpClientTests)

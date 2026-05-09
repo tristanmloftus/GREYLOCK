@@ -8,6 +8,7 @@
 
 #include "../models/Account.h"
 #include "../models/Transaction.h"
+#include "IHttpClient.h"
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -104,4 +105,8 @@ private:
     std::chrono::seconds timeout_{30};
 };
 
-std::shared_ptr<IPlaidService> create_plaid_service(bool use_stub = false);
+// Factory: if use_stub is true OR http_client is null, returns StubPlaidService.
+// In production, pass use_stub=false and a real CurlHttpClient.
+std::shared_ptr<IPlaidService> create_plaid_service(
+    bool use_stub = false,
+    std::shared_ptr<IHttpClient> http_client = nullptr);

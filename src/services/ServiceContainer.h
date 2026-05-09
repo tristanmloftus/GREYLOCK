@@ -6,6 +6,7 @@
 #include "StorageService.h"
 #include "PlaidService.h"
 #include "ISecretStore.h"
+#include "IHttpClient.h"
 
 class ServiceContainer {
 public:
@@ -23,6 +24,10 @@ public:
         secret_store_ = service;
     }
 
+    void set_http_client(std::shared_ptr<IHttpClient> service) {
+        http_client_ = service;
+    }
+
     std::shared_ptr<IStorageService> get_storage() {
         return storage_;
     }
@@ -33,6 +38,10 @@ public:
 
     std::shared_ptr<ISecretStore> get_secret_store() {
         return secret_store_;
+    }
+
+    std::shared_ptr<IHttpClient> get_http_client() {
+        return http_client_;
     }
 
     IStorageService& storage() {
@@ -50,12 +59,19 @@ public:
         return *secret_store_;
     }
 
+    IHttpClient& http_client() {
+        if (!http_client_) throw std::runtime_error("HTTP client not initialized");
+        return *http_client_;
+    }
+
     bool has_storage() const { return storage_ != nullptr; }
     bool has_plaid() const { return plaid_ != nullptr; }
     bool has_secret_store() const { return secret_store_ != nullptr; }
+    bool has_http_client() const { return http_client_ != nullptr; }
 
 private:
     std::shared_ptr<IStorageService> storage_;
     std::shared_ptr<IPlaidService> plaid_;
     std::shared_ptr<ISecretStore> secret_store_;
+    std::shared_ptr<IHttpClient> http_client_;
 };
