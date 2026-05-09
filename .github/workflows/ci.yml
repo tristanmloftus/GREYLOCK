@@ -20,7 +20,6 @@ jobs:
   build:
     name: build-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    fail-fast: false
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +75,6 @@ jobs:
           path: build/_deps
           key: ${{ runner.os }}-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-fetchcontent-${{ steps.date.outputs.month }}-
             ${{ runner.os }}-fetchcontent-
 
       # -----------------------------------------------------------------------
