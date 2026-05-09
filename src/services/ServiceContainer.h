@@ -7,6 +7,7 @@
 #include "PlaidService.h"
 #include "ISecretStore.h"
 #include "IHttpClient.h"
+#include "BackendClient.h"
 
 class ServiceContainer {
 public:
@@ -28,6 +29,10 @@ public:
         http_client_ = service;
     }
 
+    void set_backend_client(std::shared_ptr<BackendClient> service) {
+        backend_client_ = service;
+    }
+
     std::shared_ptr<IStorageService> get_storage() {
         return storage_;
     }
@@ -42,6 +47,10 @@ public:
 
     std::shared_ptr<IHttpClient> get_http_client() {
         return http_client_;
+    }
+
+    std::shared_ptr<BackendClient> get_backend_client() {
+        return backend_client_;
     }
 
     IStorageService& storage() {
@@ -64,14 +73,21 @@ public:
         return *http_client_;
     }
 
+    BackendClient& backend_client() {
+        if (!backend_client_) throw std::runtime_error("Backend client not initialized");
+        return *backend_client_;
+    }
+
     bool has_storage() const { return storage_ != nullptr; }
     bool has_plaid() const { return plaid_ != nullptr; }
     bool has_secret_store() const { return secret_store_ != nullptr; }
     bool has_http_client() const { return http_client_ != nullptr; }
+    bool has_backend_client() const { return backend_client_ != nullptr; }
 
 private:
     std::shared_ptr<IStorageService> storage_;
     std::shared_ptr<IPlaidService> plaid_;
     std::shared_ptr<ISecretStore> secret_store_;
     std::shared_ptr<IHttpClient> http_client_;
+    std::shared_ptr<BackendClient> backend_client_;
 };

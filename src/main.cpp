@@ -15,6 +15,7 @@
 #include "services/ServiceContainer.h"
 #include "services/SecurityService.h"
 #include "services/http/CurlHttpClient.h"
+#include "services/BackendClient.h"
 #include "utils/Logger.h"
 #include "utils/ConfigManager.h"
 #include "views/DashboardView.h"
@@ -59,6 +60,23 @@ public:
         // Wire the HTTP client (libcurl). Used by PlaidService and future services.
         auto http_client = std::make_shared<CurlHttpClient>();
         services.set_http_client(http_client);
+
+        // Wire BackendClient.  Base URL from TF_BACKEND_URL env var (default
+        // https://localhost:8443).  Phase 3 will authenticate and pass session
+        // tokens; for Phase 2 the client is registered but not actively used.
+        {
+            const char* backend_url_env = std::getenv("TF_BACKEND_URL");
+            std::string backend_url = (backend_url_env && backend_url_env[0] != '\0')
+                ? std::string(backend_url_env)
+                : "https://localhost:8443";
+            try {
+                auto backend = std::make_shared<BackendClient>(http_client, backend_url);
+                services.set_backend_client(backend);
+            } catch (const std::invalid_argument& e) {
+                Logger::instance().warning(
+                    std::string("BackendClient not registered: ") + e.what());
+            }
+        }
 
         auto client_id_opt = ConfigManager::instance().get_plaid_client_id();
         auto secret_opt = ConfigManager::instance().get_plaid_secret();

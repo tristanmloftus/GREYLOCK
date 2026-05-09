@@ -298,6 +298,7 @@ set(COMMON_SOURCES
   src/services/ConsolidationService.cpp
   src/services/http/CurlHttpClient.cpp
   src/services/crypto/EnvelopeEncryption.cpp
+  src/services/BackendClient.cpp
   src/utils/SyntheticGenerator.cpp
   src/utils/Validator.cpp
   src/utils/ConfigManager.cpp
@@ -630,3 +631,56 @@ target_link_libraries(MigrationsTests PRIVATE
 )
 
 add_test(NAME MigrationsTests COMMAND MigrationsTests)
+
+# ==========================================================================
+# Phase 2.C additions — BackendClient (TUI side) + integration test
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# BackendClientTests  (Phase 2.C)
+# Unit tests use FakeHttpClient (no network).
+# Integration test (Healthz_LiveRoundTrip) launches TerminalFinanceServer as
+# a subprocess, polls /healthz via BackendClient until ready, then asserts.
+#
+# TF_FIXTURES_DIR is passed so the integration test can find test-ca.pem,
+# test-cert.pem, and test-key.pem without relying on cwd.
+# TF_SERVER_BIN is the absolute path to the TerminalFinanceServer binary so
+# the integration test can fork+exec it without hardcoding build paths.
+# --------------------------------------------------------------------------
+add_executable(BackendClientTests
+  tests/test_backend_client.cpp
+  ${COMMON_SOURCES}
+  ${SECRET_STORE_SOURCES}
+)
+
+# The integration test launches the TerminalFinanceServer binary; make sure
+# it's built first.
+add_dependencies(BackendClientTests TerminalFinanceServer)
+
+if(MSVC)
+  target_compile_options(BackendClientTests PRIVATE /MT)
+endif()
+
+target_compile_definitions(BackendClientTests PRIVATE
+  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+)
+
+target_link_libraries(BackendClientTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+
+if(WIN32)
+  target_link_libraries(BackendClientTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(BackendClientTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME BackendClientTests COMMAND BackendClientTests)
