@@ -1,0 +1,7 @@
+.vscode/
+build/
+__pycache__/
+*.pyc
+config.enc
+data.json
+*.log
