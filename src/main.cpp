@@ -6,6 +6,8 @@
 #include <memory>
 #include <algorithm>
 
+#include <sodium.h>
+
 #include "models/DataStore.h"
 #include "models/Entity.h"
 #include "services/StorageService.h"
@@ -207,6 +209,16 @@ public:
 };
 
 int main() {
+    // libsodium initialization. Must happen before any crypto primitive is
+    // used. Returns -1 on failure (fatal), 0 on first success, 1 if already
+    // initialized. The crypto functions also self-init defensively, but
+    // calling here makes the contract explicit and catches misconfiguration
+    // at startup rather than first use.
+    if (sodium_init() < 0) {
+        std::cerr << "FATAL: sodium_init() failed; crypto unavailable" << std::endl;
+        return 1;
+    }
+
     auto screen = ScreenInteractive::Fullscreen();
 
     App app;
