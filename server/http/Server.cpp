@@ -6,6 +6,8 @@
 #include "Server.h"
 #include "HealthzHandler.h"
 
+#include <openssl/ssl.h>
+
 #include <atomic>
 #include <stdexcept>
 #include <string>
@@ -43,6 +45,18 @@ Server::Server(const ServerConfig& cfg)
         throw std::runtime_error(
             "Server: SSLServer is not valid — check cert_path and key_path. "
             "cert_path=" + cfg_.cert_path + " key_path=" + cfg_.key_path);
+    }
+
+    // Enforce TLS 1.3 minimum per V0_2_PLAN.md §g Phase 2 ("HTTPS + TLS 1.3").
+    // Without this, OpenSSL 3.x defaults still permit TLS 1.0 / 1.1, which
+    // are known-broken protocols. Security review F-2: don't ship a TLS
+    // server whose verify-claim doesn't match its negotiated floor.
+    SSL_CTX* ctx = impl_->ssl_server.ssl_context();
+    if (!ctx || SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) != 1) {
+        delete impl_;
+        impl_ = nullptr;
+        throw std::runtime_error(
+            "Server: failed to set TLS 1.3 minimum protocol version");
     }
 }
 
