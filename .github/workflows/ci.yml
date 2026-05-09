@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - v0.2-dev
+      - "v0.2-dev/**"
+  pull_request:
+    branches:
+      - main
+      - v0.2-dev
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    fail-fast: false
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    env:
+      TF_NETWORK_TESTS: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # macOS: install deps via Brewfile
+      # -----------------------------------------------------------------------
+      - name: Install macOS dependencies (Brewfile)
+        if: runner.os == 'macOS'
+        run: brew bundle --file=Brewfile
+
+      # -----------------------------------------------------------------------
+      # Windows: resolve vcpkg
+      # GitHub-hosted windows-latest ships vcpkg at C:\vcpkg.
+      # We set VCPKG_ROOT so CMake's toolchain file can find it.
+      # -----------------------------------------------------------------------
+      - name: Set VCPKG_ROOT (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vcpkgPath = "C:\vcpkg"
+          if (-Not (Test-Path $vcpkgPath)) {
+            Write-Error "vcpkg not found at $vcpkgPath — runner image may have changed"
+            exit 1
+          }
+          echo "VCPKG_ROOT=$vcpkgPath" >> $env:GITHUB_ENV
+
+      # Cache vcpkg installed packages on Windows.
+      # Key includes OS + hash of vcpkg.json so a dependency change busts the cache.
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+
+      # Cache FetchContent downloaded sources (_deps directory).
+      # Key: OS + hash of CMakeLists.txt (which contains all FetchContent_Declare calls).
+      # Monthly fallback key ensures cold-cache recovery without perpetual misses.
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-fetchcontent-${{ steps.date.outputs.month }}-
+            ${{ runner.os }}-fetchcontent-
+
+      # -----------------------------------------------------------------------
+      # Configure
+      # -----------------------------------------------------------------------
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_BUILD_TYPE=Release
+
+      # -----------------------------------------------------------------------
+      # Build
+      # -----------------------------------------------------------------------
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      # -----------------------------------------------------------------------
+      # Test
+      # -----------------------------------------------------------------------
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # -----------------------------------------------------------------------
+      # Upload debug artifacts on failure
+      # -----------------------------------------------------------------------
+      - name: Upload test log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/CMakeFiles/CMakeOutput.log
+          if-no-files-found: ignore
