@@ -92,13 +92,23 @@ std::optional<std::vector<std::byte>> DpapiSecretStore::get(std::string_view key
 bool DpapiSecretStore::remove(std::string_view key) {
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER, kRegistrySubkey, 0, KEY_WRITE, &hKey) != ERROR_SUCCESS) {
-        // Key doesn't exist; treat as success (already gone).
+        // Registry subkey doesn't exist yet; the value is already absent. Treat as success.
         return true;
     }
 
     std::string key_str(key);
-    RegDeleteValueA(hKey, key_str.c_str());
+    // Security review (Phase 0 audit): the original code discarded RegDeleteValueA's return
+    // value, silently swallowing genuine I/O failures. Now we check it.
+    // ERROR_FILE_NOT_FOUND means the value was already absent — idempotent success.
+    // Any other non-zero code is a real failure; log it and return false.
+    LONG rc = RegDeleteValueA(hKey, key_str.c_str());
     RegCloseKey(hKey);
+
+    if (rc != ERROR_SUCCESS && rc != ERROR_FILE_NOT_FOUND) {
+        Logger::instance().error("DpapiSecretStore: RegDeleteValueA failed for key: " + key_str +
+            " (LONG=" + std::to_string(rc) + ")");
+        return false;
+    }
 
     Logger::instance().info("DpapiSecretStore: Removed secret for key: " + key_str);
     return true;
