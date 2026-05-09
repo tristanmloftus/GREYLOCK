@@ -1,6 +1,6 @@
 # Greylock — Threat Model
 
-Phase 1 deliverable. The honest list of what we defend, what we don't, and where the trade-offs sit. Pair with `docs/ARCHITECTURE.md` (mechanism) and `docs/API.md` (surface).
+Originally Phase 1 deliverable; finalized at Phase 5 (v0.1.0 tag) on 2026-05-09. The honest list of what we defend, what we don't, and where the trade-offs sit. Pair with `docs/ARCHITECTURE.md` (mechanism), `docs/API.md` (surface), `docs/SECURITY_AUDIT.md` (verification), `docs/RUNBOOK.md` (operations).
 
 ---
 
@@ -369,6 +369,8 @@ These are choices the model exposes. Each is a decision, not a bug.
 | D-8 | Best-effort `Buffer.fill(0)` | V8/libuv may copy buffers internally | A native binding for `mlock`/`memzero` would harden this; not in v0.1 |
 | D-9 | Owner can lock out members | Owner role asymmetry by intent | Distributed multi-party admin (m-of-n) deferred; v0.2+ |
 | D-10 | Indistinguishable 404 for out-of-scope reads | Prevents resource enumeration | Slightly noisier debugging; QA-PRIVACY tests verify this |
+| D-11 | Plaid Link script loaded from `https://cdn.plaid.com` (the only third-party origin) | Plaid Link UX requires their hosted bundle; self-hosting is brittle across Plaid version changes | A compromise of Plaid's CDN can inject script into the `/connect` page only. CSP `script-src 'self' https://cdn.plaid.com` minimizes the surface. Bank balances themselves are unaffected (they're computed server-side from already-encrypted Plaid token responses). |
+| D-12 | Master-passphrase rotation is deferred to v0.2 (`admin-rotate-master` is a stub in v0.1) | Full rotation requires multi-step Keychain + DB orchestration with atomic rollback that needs proper integration testing | If a rotation is forced (lost laptop with passphrase known, etc.), the v0.1 mitigation is "shred the DB and rebuild from Plaid" per `RUNBOOK.md` §4. Plaid is the source of truth; the local DB is reconstructible. |
 
 ---
 
@@ -434,6 +436,8 @@ We list these to make it impossible for a future commit to accidentally drift th
 8. **Side-channel attacks on local crypto** (timing, cache, RowHammer, etc.). Out of scope.
 9. **External anchoring of the audit chain.** v0.1 leaves chain integrity verifiable only locally.
 10. **Multi-device account portability.** v0.1 has one passkey per user.
+11. **Compromise of Plaid's CDN delivering the Link script.** Mitigated by CSP `script-src 'self' https://cdn.plaid.com` (cannot escape that page). Bank balances are server-computed from already-encrypted tokens, so a CDN compromise cannot exfiltrate balances directly.
+12. **Master-passphrase rotation in v0.1.** Deferred to v0.2 — see D-12. v0.1 lost-laptop response is documented in `RUNBOOK.md` §4.
 
 ---
 

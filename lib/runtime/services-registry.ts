@@ -73,7 +73,28 @@ export interface RegistryOverrides {
 
 let overrides: RegistryOverrides = {};
 
+/**
+ * Production guard for the test-only override hooks. Refuses to mutate the
+ * registry unless we're explicitly in a test environment. This closes
+ * QA-SEC Phase-2 §M-3: a malicious dependency reaching this surface in
+ * production cannot swap the CryptoService.
+ */
+function assertTestEnv(caller: string): void {
+  const isTestEnv =
+    process.env['NODE_ENV'] === 'test' ||
+    process.env['VITEST'] === 'true' ||
+    process.env['VITEST'] === '1' ||
+    process.env['GREYLOCK_TEST_MODE'] === '1';
+  if (!isTestEnv) {
+    throw new Error(
+      `${caller}: registry overrides are forbidden outside the test environment ` +
+        `(set NODE_ENV=test or GREYLOCK_TEST_MODE=1).`,
+    );
+  }
+}
+
 export function __setRegistryOverridesForTests(next: RegistryOverrides): void {
+  assertTestEnv('__setRegistryOverridesForTests');
   overrides = next;
   cryptoSingleton = null;
   reposSingleton = null;
@@ -83,6 +104,7 @@ export function __setRegistryOverridesForTests(next: RegistryOverrides): void {
 }
 
 export function __resetRegistryForTests(): void {
+  assertTestEnv('__resetRegistryForTests');
   overrides = {};
   cryptoSingleton = null;
   reposSingleton = null;

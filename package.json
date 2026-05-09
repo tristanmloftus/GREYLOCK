@@ -1,6 +1,6 @@
 {
   "name": "greylock",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Private financial operating dashboard for PCC. Localhost-only, passkey-only, three users.",
   "engines": {
@@ -74,7 +74,8 @@
       "unrs-resolver"
     ],
     "overrides": {
-      "better-sqlite3": "npm:better-sqlite3-multiple-ciphers@^11.10.0"
+      "better-sqlite3": "npm:better-sqlite3-multiple-ciphers@^11.10.0",
+      "postcss": "^8.5.10"
     }
   }
 }

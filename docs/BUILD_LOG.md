@@ -4,6 +4,44 @@ Append-only record of orchestration decisions, agent spawns, QA verdicts, and ph
 
 ---
 
+## 2026-05-09 — Phase 5 — Hardening + Docs ✅ — v0.1.0 tagged
+
+Commit: pending — `chore: hardening, security audit, runbook`
+Tag: pending — `v0.1.0`
+
+**Carry-forwards resolved at Phase 5:**
+- **M-1 (PostCSS XSS via Next.js transitive)** ✅ — `pnpm.overrides → "postcss": "^8.5.10"` added. `pnpm audit --prod --audit-level=moderate` now `No known vulnerabilities found`.
+- **M-3 (RegistryOverrides production guard)** ✅ — `assertTestEnv()` added to `__set/__resetRegistryOverridesForTests`; throws unless `NODE_ENV=test` or `VITEST=1` or `GREYLOCK_TEST_MODE=1`.
+- **L-6 (`pnpm.overrides` audit)** ✅ — `pnpm why better-sqlite3` confirms only `@prisma/adapter-better-sqlite3` and the direct dep resolve it; both correctly map to the SQLCipher fork. No collateral.
+
+**Carry-forwards explicitly deferred to v0.2 (documented in `RUNBOOK.md` §7):**
+- M-2 (`User.wrappedUserDek` + `Passkey.kekSalt` cleanup): architecture cleanliness; not a security or correctness gap. The `WrappedDekReader` shim is correct.
+- L-5 (LOCAL_PEERCRED via N-API): defense-in-depth only; the 0600 socket + `getuid()` parity is tautologically equivalent for any successful connection on macOS.
+- C-1 `pnpm admin:rotate-master` production wiring: complex multi-step flow needs proper integration testing. v0.1 stub prints a clear "not yet implemented" message; lost-laptop drill in `RUNBOOK.md` §4 documents the v0.1 mitigation (shred + rebuild from Plaid).
+- C-2 `pnpm admin:add-pcc-member` script: manual workaround documented.
+- C-3 `scripts/sync.ts` production boot path: dev-only for v0.1; web-app boot takes precedence.
+- C-4 multi-passkey-per-user: one passkey per user is the v0.1 model.
+
+**Hardening:**
+- Full Content-Security-Policy locked in `next.config.mjs`. `script-src 'self' https://cdn.plaid.com`; everything else is `'self'`. `'unsafe-inline'` is present in `style-src` only (Next.js RSC requirement; documented). Plus HSTS, X-Frame-Options DENY, Referrer-Policy strict-origin, Cross-Origin-{Opener,Resource}-Policy same-origin, expanded Permissions-Policy.
+- `pnpm.overrides` now has `postcss: ^8.5.10` alongside the existing SQLCipher fork override.
+
+**Docs shipped at Phase 5:**
+- `docs/RUNBOOK.md` — full operator manual: install, daily operation, enroll, lost-laptop drill, audit verify, Cade-onboarding, v0.2 deferrals, troubleshooting.
+- `docs/SECURITY_AUDIT.md` — consolidated v0.1.0 audit, supersedes per-phase QA-SEC reports (which remain for traceability).
+- `docs/THREAT_MODEL.md` — finalized: added D-11 (Plaid Link CDN exception), D-12 (rotation deferral), and items #11–#12 to the "what is NOT defended" list.
+
+**Tag-time gates:**
+- `pnpm typecheck` — clean
+- `pnpm test` — 430/430 across 33 files
+- `pnpm lint` — 0 errors, 15 non-blocking warnings (filesystem false-positives in migration loader and font downloader)
+- `pnpm audit --prod --audit-level=moderate` — **No known vulnerabilities found**
+- Final manual sweep against the SECURITY_AUDIT mandatory checklist — all PASS
+
+**Verdict: Greylock v0.1.0 ships.**
+
+---
+
 ## 2026-05-06 — Phase 4 — UI ✅
 
 Commit: pending — `feat(ui): dashboard, connect flow, admin`
