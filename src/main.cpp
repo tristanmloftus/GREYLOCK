@@ -34,6 +34,7 @@
 #include "views/AccountsView.h"
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
+#include "migration/V01Migrator.h"
 
 using namespace ftxui;
 
@@ -479,6 +480,90 @@ static int cmd_whoami(
     return 0;
 }
 
+// --migrate-from-local <path>
+static int cmd_migrate_from_local(
+    std::shared_ptr<BackendClient> backend,
+    std::shared_ptr<ISecretStore>  secrets,
+    const std::string& json_path)
+{
+    // Require a logged-in session.
+    const char* env_email = std::getenv("TF_USER_EMAIL");
+    std::string email = (env_email && env_email[0] != '\0') ? std::string(env_email) : "";
+    if (email.empty()) {
+        std::cerr << "Error: TF_USER_EMAIL must be set for --migrate-from-local." << std::endl;
+        return 1;
+    }
+
+    AuthService auth(backend, secrets, email);
+    if (!auth.has_cached_session()) {
+        std::cerr << "Run --login first." << std::endl;
+        return 1;
+    }
+
+    // Retrieve the session token.
+    // current_user_id() verifies the token is still valid (GET /auth/whoami).
+    auto user_id = auth.current_user_id();
+    if (!user_id.has_value()) {
+        std::cerr << "Session expired or invalid. Run --login first." << std::endl;
+        return 1;
+    }
+
+    // Read the cached token directly via the private API surface exposed by
+    // AuthService. Since AuthService has no public get_token(), we re-read it
+    // from the secret store using the same key format ("tf-session-{email}").
+    // This is the minimal reach into internals required for the CLI path.
+    std::optional<std::string> token_opt;
+    {
+        // Re-use the same ISecretStore that AuthService uses.
+        std::string cache_key = "tf-session-" + email;
+        auto raw = secrets->get(cache_key);
+        if (raw.has_value()) {
+            std::string tok;
+            tok.reserve(raw->size());
+            for (auto b : *raw) {
+                tok += static_cast<char>(b);
+            }
+            token_opt = std::move(tok);
+        }
+    }
+
+    if (!token_opt.has_value()) {
+        std::cerr << "Could not read cached session token. Run --login first." << std::endl;
+        return 1;
+    }
+
+    BackendClientAdapter adapter(*backend);
+    V01Migrator migrator(adapter, *token_opt);
+
+    std::cout << "Starting migration from: " << json_path << "\n";
+    MigrationReport report = migrator.migrate(json_path);
+
+    std::cout << "\n--- Migration Report ---\n";
+    std::cout << "Entities:     " << report.entities_created     << " created, "
+              << report.entities_skipped     << " skipped\n";
+    std::cout << "Accounts:     " << report.accounts_created     << " created, "
+              << report.accounts_skipped     << " skipped\n";
+    std::cout << "Transactions: " << report.transactions_created << " created, "
+              << report.transactions_skipped << " skipped\n";
+    std::cout << "Categories:   " << report.categories_created   << " created, "
+              << report.categories_skipped   << " skipped\n";
+    std::cout << "Budgets:      " << report.budgets_created      << " created, "
+              << report.budgets_skipped      << " skipped\n";
+    std::cout << "Errors:       " << report.errors << "\n";
+
+    if (!report.error_messages.empty()) {
+        std::cout << "\nError details:\n";
+        for (const auto& msg : report.error_messages) {
+            std::cout << "  - " << msg << "\n";
+        }
+    }
+
+    // Zeroize the session token from stack memory.
+    sodium_memzero(token_opt->data(), token_opt->size());
+
+    return (report.errors > 0) ? 1 : 0;
+}
+
 // --------------------------------------------------------------------------
 // Shared service wiring (used by both CLI and TUI paths)
 // --------------------------------------------------------------------------
@@ -589,8 +674,25 @@ int main(int argc, char** argv) {
             return cmd_whoami(core.backend, core.secrets);
         }
 
+        if (flag == "--migrate-from-local") {
+            if (argc < 3) {
+                std::cerr << "Usage: TerminalFinance --migrate-from-local <path-to-v0.1-json>" << std::endl;
+                return 1;
+            }
+            std::string migrate_path(argv[2]);
+            if (!core.backend) {
+                std::cerr << "Error: BackendClient not initialized (bad TF_BACKEND_URL?)" << std::endl;
+                return 1;
+            }
+            if (!core.secrets) {
+                std::cerr << "Error: SecretStore not available on this platform." << std::endl;
+                return 1;
+            }
+            return cmd_migrate_from_local(core.backend, core.secrets, migrate_path);
+        }
+
         std::cerr << "Unknown flag: " << flag << "\n"
-                  << "Usage: TerminalFinance [--enroll <token>|--login|--logout|--whoami]"
+                  << "Usage: TerminalFinance [--enroll <token>|--login|--logout|--whoami|--migrate-from-local <path>]"
                   << std::endl;
         return 1;
     }

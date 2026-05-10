@@ -1351,3 +1351,51 @@ elseif(APPLE)
 endif()
 
 add_test(NAME PlaidSyncSchedulerTests COMMAND PlaidSyncSchedulerTests)
+
+# ==========================================================================
+# Phase 4.F additions — V01Migrator (v0.1 → server migration tool)
+# ALL additions below this line were added by 4.F. Do not move above existing.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# Wire V01Migrator into the main TerminalFinance binary.
+# BackendClientAdapter (in V01Migrator.cpp) depends on BackendClient which is
+# already in COMMON_SOURCES.
+# --------------------------------------------------------------------------
+target_sources(TerminalFinance PRIVATE src/migration/V01Migrator.cpp)
+
+# --------------------------------------------------------------------------
+# V01MigratorTests
+# Unit tests using FakeBackendClient — no network required.
+# 7 test cases covering empty JSON, create, 409 skip, 404 error, large
+# batches, plaid_access_token omission, and multi-error recording.
+# --------------------------------------------------------------------------
+add_executable(V01MigratorTests
+  tests/test_v01_migrator.cpp
+  src/migration/V01Migrator.cpp
+  src/services/BackendClient.cpp
+  src/services/http/CurlHttpClient.cpp
+)
+
+if(MSVC)
+  target_compile_options(V01MigratorTests PRIVATE /MT)
+endif()
+
+target_link_libraries(V01MigratorTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+
+if(WIN32)
+  target_link_libraries(V01MigratorTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(V01MigratorTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME V01MigratorTests COMMAND V01MigratorTests)
