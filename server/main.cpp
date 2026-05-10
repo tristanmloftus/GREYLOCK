@@ -10,6 +10,9 @@
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
 #include "plaid/PlaidTokenBroker.h"
+#include "plaid/PlaidApiClient.h"
+#include "plaid/PlaidSyncScheduler.h"
+#include "../src/services/http/CurlHttpClient.h"
 
 #include <sodium.h>
 #include <sqlite3.h>
@@ -107,9 +110,10 @@ static Database open_db_with_migrations(const std::string& db_path,
     Database db(db_path, std::move(master_key_hex));
 
     Migrations migrations;
-    migrations.register_migration({1, "M001_initial_schema",   M001_initial_schema_up});
-    migrations.register_migration({2, "M002_categories_table", M002_categories_table_up});
-    migrations.register_migration({3, "M003_budgets_table",    M003_budgets_table_up});
+    migrations.register_migration({1, "M001_initial_schema",     M001_initial_schema_up});
+    migrations.register_migration({2, "M002_categories_table",   M002_categories_table_up});
+    migrations.register_migration({3, "M003_budgets_table",      M003_budgets_table_up});
+    migrations.register_migration({4, "M004_plaid_sync_state",   M004_plaid_sync_state_up});
     migrations.apply_pending(db);
 
     return db;
@@ -372,6 +376,43 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Phase 4.D: PlaidApiClient + PlaidSyncScheduler.
+    //
+    // Only started if PLAID_CLIENT_ID and PLAID_SECRET are both set.
+    // PlaidTokenBroker must also be available (TF_MASTER_KEY present).
+    //
+    // F-1 GUARDRAIL: Plaid creds are read from env vars inside PlaidApiClient
+    //   constructor.  They are NEVER logged or stored outside that object.
+    // -----------------------------------------------------------------------
+    CurlHttpClient curl_http_client;
+    std::unique_ptr<tf::plaid::PlaidApiClient>      plaid_api_ptr;
+    std::unique_ptr<tf::plaid::PlaidSyncScheduler>  plaid_scheduler_ptr;
+
+    {
+        const char* plaid_cid = std::getenv("PLAID_CLIENT_ID");
+        const char* plaid_sec = std::getenv("PLAID_SECRET");
+        bool creds_present = (plaid_cid && plaid_cid[0] != '\0') &&
+                             (plaid_sec && plaid_sec[0] != '\0');
+
+        if (!creds_present) {
+            std::cerr << "PlaidSyncScheduler: not started (PLAID_CLIENT_ID unset)\n";
+        } else if (!plaid_broker_ptr) {
+            std::cerr << "PlaidSyncScheduler: not started (PlaidTokenBroker unavailable)\n";
+        } else {
+            try {
+                plaid_api_ptr = std::make_unique<tf::plaid::PlaidApiClient>(curl_http_client);
+                plaid_scheduler_ptr = std::make_unique<tf::plaid::PlaidSyncScheduler>(
+                    db, *plaid_broker_ptr, *plaid_api_ptr, audit_log);
+            } catch (const std::exception& ex) {
+                std::cerr << "WARNING: PlaidSyncScheduler init failed: " << ex.what()
+                          << "\n  Plaid sync will be unavailable.\n";
+                plaid_api_ptr.reset();
+                plaid_scheduler_ptr.reset();
+            }
+        }
+    }
+
     Server server(cfg);
     server.register_routes();
 
@@ -385,6 +426,11 @@ int main(int argc, char* argv[]) {
     tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
     tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
 
+    // Start Plaid sync scheduler after all routes are registered.
+    if (plaid_scheduler_ptr) {
+        plaid_scheduler_ptr->start();
+    }
+
     // Install SIGINT/SIGTERM handler so Ctrl-C exits cleanly.
     g_server = &server;
     std::signal(SIGINT,  signal_handler);
@@ -397,10 +443,19 @@ int main(int argc, char* argv[]) {
         std::cerr << "ERROR: server failed to bind on "
                   << cfg.bind_addr << ":" << cfg.port
                   << " — check that the port is not already in use.\n";
+        // Stop scheduler before returning.
+        if (plaid_scheduler_ptr) {
+            plaid_scheduler_ptr->stop();
+        }
         return 1;
     }
 
     // start() blocks until stop() is called.
+    // Stop the scheduler gracefully before the server exits.
+    if (plaid_scheduler_ptr) {
+        plaid_scheduler_ptr->stop();
+    }
+
     std::cout << "Server stopped.\n";
     return 0;
 }

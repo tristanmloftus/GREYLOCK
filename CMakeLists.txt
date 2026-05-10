@@ -1284,3 +1284,70 @@ target_link_libraries(PlaidServiceRefactorTests PRIVATE
 )
 
 add_test(NAME PlaidServiceRefactorTests COMMAND PlaidServiceRefactorTests)
+
+# ==========================================================================
+# Phase 4.D additions — PlaidApiClient + PlaidSyncScheduler
+# ALL additions below this line were added by 4.D. Do not move above existing.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# Wire PlaidApiClient and PlaidSyncScheduler into TerminalFinanceServer.
+# Also adds CurlHttpClient (needed by PlaidApiClient via main.cpp).
+# --------------------------------------------------------------------------
+target_sources(TerminalFinanceServer PRIVATE
+  server/plaid/PlaidApiClient.cpp
+  server/plaid/PlaidSyncScheduler.cpp
+  src/services/http/CurlHttpClient.cpp
+)
+
+target_link_libraries(TerminalFinanceServer PRIVATE
+  CURL::libcurl
+)
+
+# --------------------------------------------------------------------------
+# PlaidSyncSchedulerTests
+# Unit tests for PlaidSyncScheduler + PlaidApiClient.
+# Uses MockPlaidApiClient (no real Plaid API calls) and StubAuditLog.
+# Uses an in-memory SQLCipher database.
+# --------------------------------------------------------------------------
+add_executable(PlaidSyncSchedulerTests
+  tests/test_plaid_sync_scheduler.cpp
+  server/plaid/PlaidApiClient.cpp
+  server/plaid/PlaidSyncScheduler.cpp
+  server/plaid/PlaidTokenBroker.cpp
+  server/audit/StubAuditLog.cpp
+  server/audit/CanonicalBytes.cpp
+  server/audit/Sanitizer.cpp
+  server/audit/SqlAuditLog.cpp
+  src/services/crypto/EnvelopeEncryption.cpp
+  src/services/http/CurlHttpClient.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(PlaidSyncSchedulerTests PRIVATE /MT)
+endif()
+
+target_include_directories(PlaidSyncSchedulerTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(PlaidSyncSchedulerTests PRIVATE
+  gtest
+  gtest_main
+  ${_SODIUM_TARGET}
+  SQLCipher::sqlcipher
+  nlohmann_json::nlohmann_json
+)
+
+if(WIN32)
+  target_link_libraries(PlaidSyncSchedulerTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(PlaidSyncSchedulerTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME PlaidSyncSchedulerTests COMMAND PlaidSyncSchedulerTests)

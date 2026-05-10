@@ -91,3 +91,11 @@ void M002_categories_table_up(Database& db);
 // M003_budgets_table — adds the budgets table (Phase 4.B).
 // ---------------------------------------------------------------------------
 void M003_budgets_table_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M004_plaid_sync_state — adds the plaid_sync_state table (Phase 4.D).
+//
+// Stores the Plaid /transactions/sync cursor per account so incremental
+// syncs fetch only new deltas.
+// ---------------------------------------------------------------------------
+void M004_plaid_sync_state_up(Database& db);

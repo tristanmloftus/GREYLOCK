@@ -145,6 +145,23 @@ void M003_budgets_table_up(Database& db) {
 }
 
 // ---------------------------------------------------------------------------
+// M004_plaid_sync_state_up — Phase 4.D
+//
+// Adds the plaid_sync_state table that stores the Plaid /transactions/sync
+// cursor per account.  The cursor is used by PlaidSyncScheduler to fetch
+// only new transaction deltas on each sync cycle.
+// ---------------------------------------------------------------------------
+void M004_plaid_sync_state_up(Database& db) {
+    db.exec(
+        "CREATE TABLE plaid_sync_state ("
+        "  account_id      TEXT    NOT NULL PRIMARY KEY,"
+        "  cursor          TEXT    NOT NULL DEFAULT '',"
+        "  last_sync_unix  INTEGER NOT NULL DEFAULT 0"
+        ");"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // M001_initial_schema_up
 //
 // Creates the 8 application tables.  schema_migrations is NOT created here —
