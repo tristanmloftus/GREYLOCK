@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build-linux:
     name: build-linux (self-hosted)
-    runs-on: [self-hosted, linux, homelab]
+    runs-on: [self-hosted, linux, skynet]
 
     env:
       TF_NETWORK_TESTS: "0"
