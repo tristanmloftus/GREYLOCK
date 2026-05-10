@@ -132,6 +132,104 @@ git commit -m "chore: regenerate test TLS fixtures"
 
 ---
 
+## Phase 3 — Auth subsystem (server-side)
+
+### Build the auth test suite
+
+```sh
+cmake --build build --target TerminalFinanceServer \
+    AuthPassphraseTests AuthTotpTests \
+    AuthEnrollmentTokenTests AuthSessionTests AuthEndpointsTests
+```
+
+### Run the auth tests
+
+```sh
+ctest --test-dir build --output-on-failure \
+    -R "AuthPassphraseTests|AuthTotpTests|AuthEnrollmentTokenTests|AuthSessionTests|AuthEndpointsTests"
+```
+
+Note: `AuthPassphraseTests` takes ~5 s due to Argon2id MODERATE parameters — expected.
+
+### Manual smoke test
+
+Assumes the server is built and dev certs exist in `dev/` (run
+`scripts/generate-dev-cert.sh` once).  The test-fixture certs in
+`tests/fixtures/` work too — pass `--cacert tests/fixtures/test-ca.pem`.
+
+**1. Mint an enrollment token:**
+```sh
+TF_DB_PATH=dev/terminalfinance.db \
+./build/TerminalFinanceServer --mint-enrollment-token rory@example.com
+# Prints a 64-char hex token (one line, no other text).  Copy it.
+```
+
+**2. Start the server in another terminal:**
+```sh
+./build/TerminalFinanceServer
+```
+
+**3. Enroll a new user (replace TOKEN with the hex string from step 1):**
+```sh
+TOKEN=<minted-token>
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  -X POST https://localhost:8443/auth/enroll \
+  -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$TOKEN\",\"email\":\"rory@example.com\",\"passphrase\":\"hunter2hunter2hunter2\"}"
+# Response: {"user_id":"...","totp_provisioning_uri":"otpauth://..."}
+# Scan the otpauth:// URI into your TOTP app (Google Authenticator, Aegis, etc.)
+```
+
+**4. Login with passphrase + TOTP code (get code from your authenticator app):**
+```sh
+TOTP=123456   # replace with current code from your authenticator
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  -X POST https://localhost:8443/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"rory@example.com\",\"passphrase\":\"hunter2hunter2hunter2\",\"totp_code\":$TOTP}"
+# Response: {"session_token":"...","user_id":"...","expires_at_unix":...}
+```
+
+**5. Whoami:**
+```sh
+SESSION=<session_token-from-step-4>
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  https://localhost:8443/auth/whoami \
+  -H "Authorization: Bearer $SESSION"
+# Response: {"user_id":"...","email":"rory@example.com"}
+```
+
+**6. Logout:**
+```sh
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  -X POST https://localhost:8443/auth/logout \
+  -H "Authorization: Bearer $SESSION"
+# Response: {}
+```
+
+**7. Whoami after logout (should 401):**
+```sh
+curl -w "\nHTTP %{http_code}" --cacert "$(mkcert -CAROOT)/rootCA.pem" \
+  https://localhost:8443/auth/whoami \
+  -H "Authorization: Bearer $SESSION"
+# Response: {"error":"invalid_or_expired_session"}  HTTP 401
+```
+
+### Windows CI commands (for Tristan)
+
+```cmd
+cmake --build build --config Debug ^
+    --target TerminalFinanceServer ^
+    AuthPassphraseTests AuthTotpTests ^
+    AuthEnrollmentTokenTests AuthSessionTests AuthEndpointsTests
+
+ctest --test-dir build -C Debug ^
+    -R "AuthPassphraseTests|AuthTotpTests|AuthEnrollmentTokenTests|AuthSessionTests|AuthEndpointsTests" ^
+    --output-on-failure
+```
+
+---
+
 ## Windows (MSVC, Visual Studio 2022)
 
 **Prerequisites:**

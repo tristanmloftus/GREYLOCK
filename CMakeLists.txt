@@ -691,24 +691,9 @@ add_test(NAME BackendClientTests COMMAND BackendClientTests)
 
 # ==========================================================================
 # Phase 3.B additions — AuthService (TUI side) + AuthServiceTests
-# ALL additions below this line were added by 3.B.  Do not move them above
-# the existing target definitions to avoid merge conflicts.
 # ==========================================================================
-
-# --------------------------------------------------------------------------
-# AuthService.cpp added to the TerminalFinance executable source list.
-# Using target_sources() here (after add_executable) so the 3.B change is
-# localised to the END of the file — consistent with how 2.B added server
-# DB sources to TerminalFinanceServer.
-# [3.B EXTENSION: TerminalFinance source list extended here]
-# --------------------------------------------------------------------------
 target_sources(TerminalFinance PRIVATE src/services/AuthService.cpp)
 
-# --------------------------------------------------------------------------
-# AuthServiceTests
-# Unit tests for AuthService — FakeHttpClient + FakeSecretStore only;
-# no network required, no server subprocess.
-# --------------------------------------------------------------------------
 add_executable(AuthServiceTests
   tests/test_auth_service.cpp
   ${COMMON_SOURCES}
@@ -737,3 +722,159 @@ elseif(APPLE)
 endif()
 
 add_test(NAME AuthServiceTests COMMAND AuthServiceTests)
+
+# ==========================================================================
+# Phase 3.A additions — server-side auth subsystem
+# ==========================================================================
+set(SERVER_AUTH_SOURCES
+  server/auth/PassphraseHash.cpp
+  server/auth/Totp.cpp
+  server/auth/EnrollmentToken.cpp
+  server/auth/Session.cpp
+  server/auth/AuthHandlers.cpp
+)
+
+set(SERVER_AUDIT_SOURCES
+  server/audit/StubAuditLog.cpp
+)
+
+target_sources(TerminalFinanceServer PRIVATE
+  ${SERVER_AUTH_SOURCES}
+  ${SERVER_AUDIT_SOURCES}
+)
+
+target_link_libraries(TerminalFinanceServer PRIVATE
+  ${_SODIUM_TARGET}
+)
+
+# --------------------------------------------------------------------------
+# AuthPassphraseTests
+# --------------------------------------------------------------------------
+add_executable(AuthPassphraseTests
+  tests/test_auth_passphrase.cpp
+  server/auth/PassphraseHash.cpp
+)
+
+if(MSVC)
+  target_compile_options(AuthPassphraseTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuthPassphraseTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthPassphraseTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET}
+)
+
+add_test(NAME AuthPassphraseTests COMMAND AuthPassphraseTests)
+
+# --------------------------------------------------------------------------
+# AuthTotpTests
+# --------------------------------------------------------------------------
+add_executable(AuthTotpTests
+  tests/test_auth_totp.cpp
+  server/auth/Totp.cpp
+)
+
+if(MSVC)
+  target_compile_options(AuthTotpTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuthTotpTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthTotpTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET}
+)
+
+add_test(NAME AuthTotpTests COMMAND AuthTotpTests)
+
+# --------------------------------------------------------------------------
+# AuthEnrollmentTokenTests
+# --------------------------------------------------------------------------
+add_executable(AuthEnrollmentTokenTests
+  tests/test_auth_enrollment_token.cpp
+  server/auth/EnrollmentToken.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(AuthEnrollmentTokenTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuthEnrollmentTokenTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthEnrollmentTokenTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} sqlite3
+)
+
+add_test(NAME AuthEnrollmentTokenTests COMMAND AuthEnrollmentTokenTests)
+
+# --------------------------------------------------------------------------
+# AuthSessionTests
+# --------------------------------------------------------------------------
+add_executable(AuthSessionTests
+  tests/test_auth_session.cpp
+  server/auth/Session.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(AuthSessionTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuthSessionTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthSessionTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} sqlite3
+)
+
+add_test(NAME AuthSessionTests COMMAND AuthSessionTests)
+
+# --------------------------------------------------------------------------
+# AuthEndpointsTests — integration: launches TerminalFinanceServer.
+# --------------------------------------------------------------------------
+add_executable(AuthEndpointsTests
+  tests/test_auth_endpoints.cpp
+  src/services/http/CurlHttpClient.cpp
+)
+
+add_dependencies(AuthEndpointsTests TerminalFinanceServer)
+
+if(MSVC)
+  target_compile_options(AuthEndpointsTests PRIVATE /MT)
+endif()
+
+target_compile_definitions(AuthEndpointsTests PRIVATE
+  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+)
+
+target_include_directories(AuthEndpointsTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthEndpointsTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} nlohmann_json::nlohmann_json
+)
+
+if(WIN32)
+  target_link_libraries(AuthEndpointsTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(AuthEndpointsTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME AuthEndpointsTests COMMAND AuthEndpointsTests)
