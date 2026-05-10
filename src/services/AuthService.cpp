@@ -58,6 +58,18 @@ std::variant<LoginResult, BackendError> AuthService::login(const LoginRequest& r
 
     auto result = backend_->post("/auth/login", body);
 
+    // RC-1: Zero passphrase and totp_code in the json body before it destructs.
+    // Residual risk: the HTTP-layer (CurlHttpClient) serialised a copy of this
+    // body as a std::string for the wire; that copy is not zeroed here.
+    if (body.contains("passphrase")) {
+        auto& s = body["passphrase"].get_ref<std::string&>();
+        sodium_memzero(s.data(), s.size());
+    }
+    if (body.contains("totp_code")) {
+        auto& s = body["totp_code"].get_ref<std::string&>();
+        sodium_memzero(s.data(), s.size());
+    }
+
     if (std::holds_alternative<BackendError>(result)) {
         Logger::instance().info("AuthService::login failed");
         return std::get<BackendError>(result);
@@ -113,6 +125,13 @@ std::variant<EnrollResult, BackendError> AuthService::enroll(const EnrollRequest
     }
 
     auto result = backend_->post("/auth/enroll", body);
+
+    // RC-1: Zero passphrase in the json body before it destructs.
+    // Residual risk: CurlHttpClient serialised a copy for the wire; not zeroed here.
+    if (body.contains("passphrase")) {
+        auto& s = body["passphrase"].get_ref<std::string&>();
+        sodium_memzero(s.data(), s.size());
+    }
 
     if (std::holds_alternative<BackendError>(result)) {
         Logger::instance().info("AuthService::enroll failed");

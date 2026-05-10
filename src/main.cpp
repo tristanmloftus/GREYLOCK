@@ -12,6 +12,7 @@
 #ifndef _WIN32
 #  include <termios.h>
 #  include <unistd.h>
+#  include <signal.h>
 #else
 #  include <conio.h>
 #endif
@@ -250,35 +251,85 @@ static std::string prompt_line(const std::string& prompt_text) {
     return line;
 }
 
-// Read a passphrase from stdin.
-// TODO v0.3: disable terminal echo for passphrase input (platform-specific:
-//   POSIX: tcgetattr/tcsetattr with ~ECHO; Windows: _getch loop).
-// In v0.2 the passphrase WILL appear on screen as the user types.
-// This is a known gap documented here per task guardrail.
+// Read a passphrase from stdin with echo suppressed.
+//
+// RC-2: Uses an RAII EchoGuard (POSIX) to guarantee echo is restored on any
+// exit path — including exception unwind.  A SIGINT handler is installed via
+// sigaction(SA_RESETHAND) so that Ctrl-C also restores the terminal before
+// re-raising SIGINT to terminate the process.
+//
+// Windows note: _getch reads without echo by design; the console subsystem
+// intercepts Ctrl-C normally.  No analogous "stuck in raw mode" risk exists on
+// the Windows path, so no extra handling is required there.
+#ifndef _WIN32
+
+// Signal-time state — must be file-scope so the signal handler can reach it.
+static struct termios g_saved_for_signal;
+static volatile sig_atomic_t g_signal_active = 0;
+
+static void restore_echo_on_signal(int sig) {
+    if (g_signal_active) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &g_saved_for_signal);
+        g_signal_active = 0;
+    }
+    // SA_RESETHAND already reset the disposition; re-raise for default action.
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+#endif // !_WIN32
+
 static std::string prompt_passphrase(const std::string& prompt_text) {
 #ifndef _WIN32
-    // POSIX: disable echo
-    struct termios old_attrs{};
-    bool echo_disabled = false;
-    if (isatty(STDIN_FILENO)) {
-        if (tcgetattr(STDIN_FILENO, &old_attrs) == 0) {
-            struct termios new_attrs = old_attrs;
-            new_attrs.c_lflag &= ~static_cast<tcflag_t>(ECHO);
-            if (tcsetattr(STDIN_FILENO, TCSANOW, &new_attrs) == 0) {
-                echo_disabled = true;
+    // RAII guard: saves termios on construction, disables echo, restores on
+    // destruction (handles normal returns AND exception unwind).
+    struct EchoGuard {
+        struct termios saved;
+        bool active = false;
+        EchoGuard() {
+            if (isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &saved) == 0) {
+                struct termios noecho = saved;
+                noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+                if (tcsetattr(STDIN_FILENO, TCSANOW, &noecho) == 0)
+                    active = true;
             }
         }
+        ~EchoGuard() {
+            if (active) tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+        }
+    };
+
+    EchoGuard guard;
+
+    // Install a one-shot SIGINT handler so Ctrl-C restores the terminal.
+    // SA_RESETHAND resets the disposition after the first delivery, so the
+    // process terminates normally on a second Ctrl-C even if the first somehow
+    // doesn't raise SIGINT.
+    if (guard.active) {
+        g_saved_for_signal = guard.saved;
+        g_signal_active    = 1;
+
+        struct sigaction sa{};
+        sa.sa_handler = restore_echo_on_signal;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESETHAND;
+        sigaction(SIGINT, &sa, nullptr);
     }
+
     std::cout << prompt_text << std::flush;
     std::string pass;
     std::getline(std::cin, pass);
-    if (echo_disabled) {
-        tcsetattr(STDIN_FILENO, TCSANOW, &old_attrs);
+
+    // Deactivate signal guard before EchoGuard destructor fires.
+    g_signal_active = 0;
+
+    if (guard.active) {
         std::cout << "\n" << std::flush; // print newline since echo was off
     }
     return pass;
 #else
-    // Windows: read char-by-char without echo using _getch
+    // Windows: _getch reads char-by-char without echo.
+    // Ctrl-C is handled by the console subsystem; no termios-equivalent risk.
     std::cout << prompt_text << std::flush;
     std::string pass;
     int ch;
@@ -559,8 +610,15 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
-        // If TF_USER_EMAIL is unset, skip the auth gate — operator may not have
-        // configured email yet. The TUI will still work in an unauthenticated state.
+        // RC-3: If TF_USER_EMAIL is unset, the auth gate is bypassed.
+        // Log a visible warning so the operator notices in production logs.
+        // This preserves v0.1 backward compatibility; v0.3 may make auth mandatory.
+        if (email.empty()) {
+            Logger::instance().warning(
+                "TF_USER_EMAIL is not set; auth gate is bypassed. "
+                "Run with TF_USER_EMAIL=<email> ./TerminalFinance to enable session-gated mode. "
+                "v0.2 default falls back to v0.1 unauthenticated TUI behavior.");
+        }
     }
 
     auto screen = ScreenInteractive::Fullscreen();

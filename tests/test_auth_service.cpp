@@ -6,7 +6,7 @@
 //   - FakeHttpClient (inlined from test_backend_client.cpp pattern)
 //   - FakeSecretStore (in-process std::unordered_map<string, vector<byte>>)
 //
-// All 10 test cases per spec:
+// All 12 test cases (10 original + 1 corrective RC-2 addition + 1 split):
 //  1. Login_Success_CachesSessionToken
 //  2. Login_401_NoCacheChange
 //  3. Login_TransportFailure_NoCacheChange
@@ -16,7 +16,9 @@
 //  7. Whoami_401_ClearsCache
 //  8. Whoami_NoCachedSession_ReturnsNullopt
 //  9. Enroll_Success_DoesNotCacheSession
-// 10. HasCachedSession_TrueWhenSet / HasCachedSession_FalseWhenAbsent
+// 10. HasCachedSession_TrueWhenSet
+// 11. HasCachedSession_FalseWhenAbsent
+// 12. Whoami_TransportFailure_LeavesCache  (RC corrective)
 
 #include <gtest/gtest.h>
 
@@ -367,6 +369,35 @@ TEST(AuthServiceTest, HasCachedSession_FalseWhenAbsent) {
     EXPECT_FALSE(auth.has_cached_session())
         << "has_cached_session should return false when no token is cached";
     EXPECT_EQ(http->call_count, 0) << "has_cached_session must not make network calls";
+}
+
+// --------------------------------------------------------------------------
+// Test 11: Whoami_TransportFailure_LeavesCache
+// --------------------------------------------------------------------------
+// Pre-populate cache with a valid-looking session token.
+// Make the FakeHttpClient return std::nullopt (transport failure).
+// Assert: returns std::nullopt AND the cache entry is STILL there —
+// only 401 should evict the cached token; transport failures must preserve it.
+TEST(AuthServiceTest, Whoami_TransportFailure_LeavesCache) {
+    auto http    = make_fake_http();
+    auto secrets = make_fake_secrets();
+    seed_session(*secrets);  // Pre-populate cache.
+
+    http->next_response = std::nullopt;  // Transport failure.
+
+    auto backend = std::make_shared<BackendClient>(http, "https://localhost:8443");
+    AuthService auth(backend, secrets, kEmail);
+
+    auto user_id = auth.current_user_id();
+
+    EXPECT_FALSE(user_id.has_value())
+        << "current_user_id should return nullopt on transport failure";
+
+    // Cache must be PRESERVED — transport failure does not mean token is stale.
+    EXPECT_EQ(secrets->store.count(kCacheKey), 1u)
+        << "Session token must NOT be evicted from cache on transport failure";
+    EXPECT_EQ(read_session(*secrets), kSessionTok)
+        << "Cached token value must be unchanged after transport failure";
 }
 
 // --------------------------------------------------------------------------
