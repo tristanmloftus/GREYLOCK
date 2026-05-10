@@ -1110,3 +1110,100 @@ target_link_libraries(SqlCipherTests PRIVATE
 )
 
 add_test(NAME SqlCipherTests COMMAND SqlCipherTests)
+
+# ==========================================================================
+# Phase 4.B additions — data CRUD endpoints + RemoteBackendStorageService
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# Server-side data handler sources: session middleware + 5 CRUD handlers +
+# entity-membership authorization helper.
+# Added via target_sources() to avoid modifying the existing add_executable().
+# --------------------------------------------------------------------------
+set(SERVER_DATA_SOURCES
+  server/auth/SessionMiddleware.cpp
+  server/data/EntityMembership.cpp
+  server/data/EntitiesHandler.cpp
+  server/data/AccountsHandler.cpp
+  server/data/TransactionsHandler.cpp
+  server/data/CategoriesHandler.cpp
+  server/data/BudgetsHandler.cpp
+)
+
+target_sources(TerminalFinanceServer PRIVATE ${SERVER_DATA_SOURCES})
+
+# --------------------------------------------------------------------------
+# TUI-side: RemoteBackendStorageService (IStorageService backed by server API).
+# save() is a documented stub returning false (write-through deferred to Phase 5).
+# --------------------------------------------------------------------------
+target_sources(TerminalFinance PRIVATE src/services/RemoteBackendStorageService.cpp)
+
+# --------------------------------------------------------------------------
+# DataEndpointsTests — integration: launches TerminalFinanceServer on port 19845.
+# Exercises entity/account/transaction/category/budget CRUD + auth guardrails.
+# --------------------------------------------------------------------------
+add_executable(DataEndpointsTests
+  tests/test_data_endpoints.cpp
+  src/services/http/CurlHttpClient.cpp
+)
+
+add_dependencies(DataEndpointsTests TerminalFinanceServer)
+
+if(MSVC)
+  target_compile_options(DataEndpointsTests PRIVATE /MT)
+endif()
+
+target_compile_definitions(DataEndpointsTests PRIVATE
+  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+)
+
+target_include_directories(DataEndpointsTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(DataEndpointsTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} nlohmann_json::nlohmann_json
+)
+
+if(WIN32)
+  target_link_libraries(DataEndpointsTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(DataEndpointsTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME DataEndpointsTests COMMAND DataEndpointsTests)
+
+# --------------------------------------------------------------------------
+# RemoteBackendStorageServiceTests — unit tests using FakeHttpClient.
+# No network, no server subprocess.
+# --------------------------------------------------------------------------
+add_executable(RemoteBackendStorageServiceTests
+  tests/test_remote_backend_storage_service.cpp
+  ${COMMON_SOURCES}
+  src/services/RemoteBackendStorageService.cpp
+)
+
+if(MSVC)
+  target_compile_options(RemoteBackendStorageServiceTests PRIVATE /MT)
+endif()
+
+target_link_libraries(RemoteBackendStorageServiceTests PRIVATE
+  gtest gtest_main nlohmann_json::nlohmann_json ${_SODIUM_TARGET}
+)
+
+if(WIN32)
+  target_link_libraries(RemoteBackendStorageServiceTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(RemoteBackendStorageServiceTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+endif()
+
+add_test(NAME RemoteBackendStorageServiceTests COMMAND RemoteBackendStorageServiceTests)

@@ -109,6 +109,42 @@ void Migrations::apply_pending(Database& db) {
 }
 
 // ---------------------------------------------------------------------------
+// M002_categories_table_up — Phase 4.B
+//
+// M001 did not include categories or budgets tables.  They are added here as
+// separate numbered migrations so existing databases can be upgraded without
+// re-running the initial schema.
+// ---------------------------------------------------------------------------
+void M002_categories_table_up(Database& db) {
+    db.exec(
+        "CREATE TABLE categories ("
+        "  id         TEXT NOT NULL PRIMARY KEY,"
+        "  entity_id  TEXT NOT NULL,"
+        "  name       TEXT NOT NULL,"
+        "  kind       TEXT NOT NULL,"
+        "  FOREIGN KEY (entity_id) REFERENCES entities(id)"
+        ");"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M003_budgets_table_up — Phase 4.B
+// ---------------------------------------------------------------------------
+void M003_budgets_table_up(Database& db) {
+    db.exec(
+        "CREATE TABLE budgets ("
+        "  id                TEXT    NOT NULL PRIMARY KEY,"
+        "  entity_id         TEXT    NOT NULL,"
+        "  category_id       TEXT,"
+        "  amount_cents      INTEGER NOT NULL DEFAULT 0,"
+        "  period_start_unix INTEGER NOT NULL,"
+        "  period_end_unix   INTEGER NOT NULL,"
+        "  FOREIGN KEY (entity_id) REFERENCES entities(id)"
+        ");"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // M001_initial_schema_up
 //
 // Creates the 8 application tables.  schema_migrations is NOT created here —

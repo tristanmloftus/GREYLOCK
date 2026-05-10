@@ -4,6 +4,11 @@
 #include "auth/AuthHandlers.h"
 #include "auth/EnrollmentToken.h"
 #include "audit/SqlAuditLog.h"
+#include "data/EntitiesHandler.h"
+#include "data/AccountsHandler.h"
+#include "data/TransactionsHandler.h"
+#include "data/CategoriesHandler.h"
+#include "data/BudgetsHandler.h"
 
 #include <sodium.h>
 #include <sqlite3.h>
@@ -101,7 +106,9 @@ static Database open_db_with_migrations(const std::string& db_path,
     Database db(db_path, std::move(master_key_hex));
 
     Migrations migrations;
-    migrations.register_migration({1, "M001_initial_schema", M001_initial_schema_up});
+    migrations.register_migration({1, "M001_initial_schema",   M001_initial_schema_up});
+    migrations.register_migration({2, "M002_categories_table", M002_categories_table_up});
+    migrations.register_migration({3, "M003_budgets_table",    M003_budgets_table_up});
     migrations.apply_pending(db);
 
     return db;
@@ -342,6 +349,13 @@ int main(int argc, char* argv[]) {
 
     // Wire auth routes.
     tf::auth::register_auth_handlers(server.raw_server(), db, audit_log);
+
+    // Wire data routes (Phase 4.B).
+    tf::data::register_entities_handlers(server.raw_server(), db, audit_log);
+    tf::data::register_accounts_handlers(server.raw_server(), db, audit_log);
+    tf::data::register_transactions_handlers(server.raw_server(), db, audit_log);
+    tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
+    tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
 
     // Install SIGINT/SIGTERM handler so Ctrl-C exits cleanly.
     g_server = &server;

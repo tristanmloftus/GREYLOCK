@@ -81,3 +81,13 @@ private:
 // register it without a separate translation unit dependency.
 // ---------------------------------------------------------------------------
 void M001_initial_schema_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M002_categories_table — adds the categories table (Phase 4.B).
+// ---------------------------------------------------------------------------
+void M002_categories_table_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M003_budgets_table — adds the budgets table (Phase 4.B).
+// ---------------------------------------------------------------------------
+void M003_budgets_table_up(Database& db);
