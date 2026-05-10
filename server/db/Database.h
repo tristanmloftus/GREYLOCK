@@ -10,6 +10,8 @@
 // include path.
 #include <sqlite3.h>
 
+#include <sodium.h>
+
 #include <functional>
 #include <optional>
 #include <stdexcept>
@@ -134,6 +136,9 @@ public:
                               /*callback=*/nullptr,
                               /*callback_arg=*/nullptr,
                               &errmsg);
+            // Zero the pragma string now — it contains the raw hex key and
+            // is no longer needed after the sqlite3_exec call.
+            sodium_memzero(pragma.data(), pragma.size());
             if (rc != SQLITE_OK) {
                 std::string msg = errmsg ? errmsg : "(no error message)";
                 sqlite3_free(errmsg);

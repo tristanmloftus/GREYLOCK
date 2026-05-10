@@ -713,6 +713,7 @@ target_include_directories(MigrationsTests PRIVATE
 target_link_libraries(MigrationsTests PRIVATE
   gtest
   gtest_main
+  ${_SODIUM_TARGET}
   SQLCipher::sqlcipher
 )
 
@@ -1104,6 +1105,7 @@ target_include_directories(SqlCipherTests PRIVATE
 target_link_libraries(SqlCipherTests PRIVATE
   gtest
   gtest_main
+  ${_SODIUM_TARGET}
   SQLCipher::sqlcipher
 )
 

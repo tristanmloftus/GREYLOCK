@@ -83,7 +83,7 @@ static std::optional<std::string> read_master_key() {
 // for key format requirements (64 hex chars = 32 bytes).
 // --------------------------------------------------------------------------
 static Database open_db_with_migrations(const std::string& db_path,
-                                        std::optional<std::string> master_key_hex) {
+                                        std::optional<std::string>&& master_key_hex) {
     {
         std::filesystem::path db_file_path(db_path);
         if (db_file_path.has_parent_path()) {
@@ -98,7 +98,7 @@ static Database open_db_with_migrations(const std::string& db_path,
         }
     }
 
-    Database db(db_path, master_key_hex);
+    Database db(db_path, std::move(master_key_hex));
 
     Migrations migrations;
     migrations.register_migration({1, "M001_initial_schema", M001_initial_schema_up});
@@ -192,7 +192,12 @@ int main(int argc, char* argv[]) {
         }
         try {
             std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
-            Database db = open_db_with_migrations(db_path, master_key_hex);
+            Database db = open_db_with_migrations(db_path, std::move(master_key_hex));
+            // Zero and release master_key_hex — no longer needed after DB open.
+            if (master_key_hex.has_value()) {
+                sodium_memzero(master_key_hex->data(), master_key_hex->size());
+                master_key_hex.reset();
+            }
 
             auto tok = tf::auth::mint_enrollment_token(mint_email,
                 std::chrono::seconds(mint_ttl_secs));
@@ -213,7 +218,12 @@ int main(int argc, char* argv[]) {
     if (do_list_users) {
         try {
             std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
-            Database db = open_db_with_migrations(db_path, master_key_hex);
+            Database db = open_db_with_migrations(db_path, std::move(master_key_hex));
+            // Zero and release master_key_hex — no longer needed after DB open.
+            if (master_key_hex.has_value()) {
+                sodium_memzero(master_key_hex->data(), master_key_hex->size());
+                master_key_hex.reset();
+            }
             print_users(db);
             return 0;
         } catch (const std::exception& ex) {
@@ -311,7 +321,12 @@ int main(int argc, char* argv[]) {
     // Use unique_ptr to allow deferred initialization while keeping RAII.
     std::unique_ptr<Database> db_ptr;
     try {
-        db_ptr = std::make_unique<Database>(open_db_with_migrations(db_path, master_key_hex));
+        db_ptr = std::make_unique<Database>(open_db_with_migrations(db_path, std::move(master_key_hex)));
+        // Zero and release master_key_hex — no longer needed after DB open.
+        if (master_key_hex.has_value()) {
+            sodium_memzero(master_key_hex->data(), master_key_hex->size());
+            master_key_hex.reset();
+        }
         std::cout << "Database migrations applied.\n\n";
     } catch (const std::exception& ex) {
         std::cerr << "ERROR: schema migration failed: " << ex.what() << "\n";

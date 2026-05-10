@@ -10,6 +10,7 @@
       "default-features": false,
       "features": ["openssl", "non-http"]
     },
-    "openssl"
+    "openssl",
+    "sqlcipher"
   ]
 }
