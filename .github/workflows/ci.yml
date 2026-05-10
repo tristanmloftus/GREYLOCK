@@ -48,7 +48,11 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -j
+        # -j 2 caps parallelism to 2 jobs. The self-hosted Debian VM has 2 vCPUs
+        # and ~2-4 GB RAM; FTXUI / cpp-httplib / gtest compile units can use
+        # 500MB-1GB each, so `-j` (auto = all cores) risks OOM on a 2GB VM.
+        # If RAM is later increased to 8GB+ we can revisit.
+        run: cmake --build build --config Release -j 2
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
