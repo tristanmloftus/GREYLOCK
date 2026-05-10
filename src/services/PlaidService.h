@@ -1,5 +1,24 @@
 #pragma once
 
+// PlaidService.h — TUI-side Plaid integration.
+//
+// v0.2 design (Q1=A: server-mediated Plaid):
+//   The TUI never holds a Plaid access_token.  All Plaid operations go through
+//   the server.  The public IPlaidService interface is account_id-based;
+//   the server looks up the encrypted token, decrypts it in a broker scope,
+//   and makes the Plaid API call.
+//
+//   IPlaidService::get_transactions(account_id, start_date, end_date) calls
+//   GET /accounts/{account_id}/transactions on the server and returns the
+//   cached transactions.
+//
+//   IPlaidService::link_account(account_id, public_token) calls
+//   POST /accounts/{account_id}/link-plaid on the server, which exchanges the
+//   public_token for an access_token and stores it encrypted via PlaidTokenBroker.
+//
+// F-1 / F-2: The plaintext Plaid access_token NEVER appears in TUI code,
+//   in any struct field, or in any log message.
+
 #include <string>
 #include <vector>
 #include <optional>
@@ -8,16 +27,6 @@
 
 #include "../models/Account.h"
 #include "../models/Transaction.h"
-#include "IHttpClient.h"
-#include <nlohmann/json.hpp>
-
-using json = nlohmann::json;
-
-enum class PlaidEnvironment {
-    Sandbox,
-    Development,
-    Production
-};
 
 struct PlaidTransaction {
     std::string transaction_id;
@@ -37,58 +46,75 @@ struct PlaidAccount {
     double balance;
 };
 
+enum class PlaidEnvironment {
+    Sandbox,
+    Development,
+    Production
+};
+
+// ---------------------------------------------------------------------------
+// IPlaidService — v0.2 account_id-based interface.
+//
+// NO method accepts or returns a Plaid access_token.  Token management is
+// the server's responsibility (PlaidTokenBroker).
+// ---------------------------------------------------------------------------
 class IPlaidService {
 public:
     virtual ~IPlaidService() = default;
 
-    virtual bool initialize(const std::string& client_id, const std::string& secret, PlaidEnvironment env = PlaidEnvironment::Sandbox) = 0;
-    virtual std::string create_link_token() = 0;
-    virtual std::optional<std::string> exchange_public_token(const std::string& public_token) = 0;
-    virtual std::vector<PlaidAccount> get_accounts(const std::string& access_token) = 0;
+    // Exchange a Plaid Link public_token for an access_token on the server.
+    // The server stores the token encrypted.  Returns true on success.
+    virtual bool link_account(const std::string& account_id,
+                              const std::string& public_token) = 0;
+
+    // Retrieve cached transactions for the given account from the server.
+    // The server performs the Plaid API call using the stored encrypted token.
     virtual std::vector<PlaidTransaction> get_transactions(
-        const std::string& access_token,
+        const std::string& account_id,
         const std::string& start_date,
-        const std::string& end_date,
-        int max_retries = 3
+        const std::string& end_date
     ) = 0;
-    virtual bool remove_item(const std::string& access_token) = 0;
+
+    // Retrieve accounts for the given account_id from the server.
+    virtual std::vector<PlaidAccount> get_accounts(
+        const std::string& account_id
+    ) = 0;
+
+    // Unlink the given account (clear its stored Plaid token on the server).
+    virtual bool unlink_account(const std::string& account_id) = 0;
+
     virtual std::string get_last_error() const = 0;
     virtual bool is_stub() const = 0;
     virtual void set_timeout(std::chrono::seconds timeout) = 0;
 };
 
+// ---------------------------------------------------------------------------
+// StubPlaidService — used in tests and when no server is available.
+//
+// All operations succeed trivially; no network calls, no token handling.
+// ---------------------------------------------------------------------------
 class StubPlaidService : public IPlaidService {
 public:
-    bool initialize(const std::string& client_id, const std::string& secret, PlaidEnvironment env = PlaidEnvironment::Sandbox) override {
-        client_id_ = client_id;
-        secret_ = secret;
-        env_ = env;
-        initialized_ = true;
+    bool link_account(const std::string& /*account_id*/,
+                      const std::string& /*public_token*/) override {
         return true;
     }
 
-    std::string create_link_token() override {
-        return "link-sandbox-xxxxx";
-    }
-
-    std::optional<std::string> exchange_public_token(const std::string& public_token) override {
-        return "access-sandbox-xxxxx";
-    }
-
-    std::vector<PlaidAccount> get_accounts(const std::string& access_token) override {
-        return {};
-    }
-
     std::vector<PlaidTransaction> get_transactions(
-        const std::string& access_token,
-        const std::string& start_date,
-        const std::string& end_date,
-        int max_retries = 3
+        const std::string& /*account_id*/,
+        const std::string& /*start_date*/,
+        const std::string& /*end_date*/
     ) override {
         return {};
     }
 
-    bool remove_item(const std::string& access_token) override {
+    std::vector<PlaidAccount> get_accounts(
+        const std::string& /*account_id*/
+    ) override {
+        return {};
+    }
+
+    bool unlink_account(const std::string& /*account_id*/) override {
         return true;
     }
 
@@ -97,16 +123,11 @@ public:
     void set_timeout(std::chrono::seconds timeout) override { timeout_ = timeout; }
 
 private:
-    std::string client_id_;
-    std::string secret_;
-    PlaidEnvironment env_ = PlaidEnvironment::Sandbox;
     std::string last_error_;
-    bool initialized_ = false;
     std::chrono::seconds timeout_{30};
 };
 
-// Factory: if use_stub is true OR http_client is null, returns StubPlaidService.
-// In production, pass use_stub=false and a real CurlHttpClient.
-std::shared_ptr<IPlaidService> create_plaid_service(
-    bool use_stub = false,
-    std::shared_ptr<IHttpClient> http_client = nullptr);
+// Factory: returns StubPlaidService when use_stub=true.
+// Production path (use_stub=false) returns a server-mediated implementation
+// that calls the TerminalFinance backend.
+std::shared_ptr<IPlaidService> create_plaid_service(bool use_stub = false);

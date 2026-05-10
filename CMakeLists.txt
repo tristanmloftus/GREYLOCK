@@ -1207,3 +1207,73 @@ elseif(APPLE)
 endif()
 
 add_test(NAME RemoteBackendStorageServiceTests COMMAND RemoteBackendStorageServiceTests)
+
+# ==========================================================================
+# Phase 4.C additions — PlaidTokenBroker (server-side) + PlaidService refactor
+# ALL additions below this line were added by 4.C. Do not move above existing.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# Wire PlaidTokenBroker into TerminalFinanceServer.
+# PlaidTokenBroker.cpp depends on: Database.h/cpp (SERVER_DB_SOURCES),
+# EnvelopeEncryption.cpp (CRYPTO_SOURCES), Zeroize.h, libsodium, sqlcipher.
+# --------------------------------------------------------------------------
+target_sources(TerminalFinanceServer PRIVATE
+  server/plaid/PlaidTokenBroker.cpp
+  src/services/crypto/EnvelopeEncryption.cpp
+)
+
+# --------------------------------------------------------------------------
+# PlaidTokenBrokerTests
+# Unit tests for PlaidTokenBroker: round-trip, AAD-binding, clear, no-token,
+# multi-account isolation, two-callable variant, overwrite.
+# Uses an in-memory SQLCipher database; no network, no TF_MASTER_KEY env var.
+# --------------------------------------------------------------------------
+add_executable(PlaidTokenBrokerTests
+  tests/test_plaid_token_broker.cpp
+  server/plaid/PlaidTokenBroker.cpp
+  src/services/crypto/EnvelopeEncryption.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(PlaidTokenBrokerTests PRIVATE /MT)
+endif()
+
+target_include_directories(PlaidTokenBrokerTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(PlaidTokenBrokerTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher
+)
+
+add_test(NAME PlaidTokenBrokerTests COMMAND PlaidTokenBrokerTests)
+
+# --------------------------------------------------------------------------
+# PlaidServiceRefactorTests
+# Compile-time and runtime checks that:
+#   - Account has no plaid_access_token field.
+#   - Account has is_plaid_linked field.
+#   - IPlaidService public API is account_id-based (no raw access_token).
+#   - StubPlaidService satisfies the new interface.
+# --------------------------------------------------------------------------
+add_executable(PlaidServiceRefactorTests
+  tests/test_plaid_service_refactor.cpp
+  src/services/PlaidService.cpp
+  src/utils/Logger.h
+)
+
+if(MSVC)
+  target_compile_options(PlaidServiceRefactorTests PRIVATE /MT)
+endif()
+
+target_include_directories(PlaidServiceRefactorTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(PlaidServiceRefactorTests PRIVATE
+  gtest gtest_main
+)
+
+add_test(NAME PlaidServiceRefactorTests COMMAND PlaidServiceRefactorTests)

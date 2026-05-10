@@ -9,6 +9,7 @@
 #include "data/TransactionsHandler.h"
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
+#include "plaid/PlaidTokenBroker.h"
 
 #include <sodium.h>
 #include <sqlite3.h>
@@ -343,6 +344,33 @@ int main(int argc, char* argv[]) {
 
     // Audit log: Phase 4 BLAKE2b-chained writer (replaces Phase 3 stub).
     tf::audit::SqlAuditLog audit_log(db);
+
+    // PlaidTokenBroker (Phase 4.C): encrypts/decrypts Plaid access tokens.
+    // Master key is sourced from TF_MASTER_KEY (64 hex chars = 32 bytes).
+    // ASSUMPTION: 4.E (SQLCipher) has not shipped yet, so the broker reads
+    // TF_MASTER_KEY independently.  Once 4.E ships, main.cpp should source
+    // the master key once and pass it to both SQLCipher and PlaidTokenBroker
+    // via the constructor that accepts a std::span<const std::byte, 32>.
+    //
+    // F-1 GUARDRAIL: the master key is read from env, NOT from any HTTP input.
+    // The broker is stack-allocated here so it is destroyed (and key material
+    // zeroed) before the process exits.
+    std::unique_ptr<tf::plaid::PlaidTokenBroker> plaid_broker_ptr;
+    {
+        const char* tf_master_key = std::getenv("TF_MASTER_KEY");
+        if (tf_master_key && tf_master_key[0] != '\0') {
+            try {
+                plaid_broker_ptr = std::make_unique<tf::plaid::PlaidTokenBroker>(db);
+                std::cout << "PlaidTokenBroker initialized (TF_MASTER_KEY present).\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "WARNING: PlaidTokenBroker init failed: " << ex.what()
+                          << "\n  Plaid token storage will be unavailable.\n";
+            }
+        } else {
+            std::cout << "WARNING: TF_MASTER_KEY not set — PlaidTokenBroker disabled. "
+                      << "Set TF_MASTER_KEY=<64 hex chars> to enable Plaid token storage.\n";
+        }
+    }
 
     Server server(cfg);
     server.register_routes();

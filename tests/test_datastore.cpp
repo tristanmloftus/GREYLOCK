@@ -549,9 +549,9 @@ TEST_F(DataStoreTest, ConsolidationServiceCalculateLiquidity) {
     auto& consolidation = ConsolidationService::instance();
 
     std::vector<Account> accounts = {
-        Account{"acc1", "Checking", "", AccountType::Checking, 1000.0, "", "", "", true},
-        Account{"acc2", "Savings", "", AccountType::Savings, 5000.0, "", "", "", true},
-        Account{"acc3", "Credit", "", AccountType::CreditCard, -500.0, "", "", "", true}
+        Account{"acc1", "Checking", "", AccountType::Checking, 1000.0, "", ""},
+        Account{"acc2", "Savings", "", AccountType::Savings, 5000.0, "", ""},
+        Account{"acc3", "Credit", "", AccountType::CreditCard, -500.0, "", ""}
     };
 
     auto liq = consolidation.calculate_liquidity(accounts);
@@ -569,40 +569,41 @@ TEST_F(DataStoreTest, ConfigManagerSingleton) {
     ASSERT_TRUE(has_creds || (!client_id.has_value() && !secret.has_value()));
 }
 
+// ---------------------------------------------------------------------------
+// PlaidService tests — v0.2 account_id-based interface.
+// The TUI never sees a Plaid access_token; all operations are account_id-keyed
+// and proxied through the TerminalFinance server (Q1=A).
+// ---------------------------------------------------------------------------
+
 TEST_F(DataStoreTest, PlaidServiceStubCreation) {
     auto service = create_plaid_service(true);
     ASSERT_TRUE(service != nullptr);
     ASSERT_TRUE(service->is_stub());
-    ASSERT_TRUE(service->initialize("test", "secret"));
 }
 
-TEST_F(DataStoreTest, PlaidServiceCreateLinkToken) {
+TEST_F(DataStoreTest, PlaidServiceStubLinkAccount) {
+    // StubPlaidService::link_account succeeds trivially.
     auto service = create_plaid_service(true);
-    service->initialize("client_id", "secret");
-    std::string token = service->create_link_token();
-    ASSERT_EQ(token, "link-sandbox-xxxxx");
+    ASSERT_TRUE(service->link_account("acc_123", "public-sandbox-token"));
 }
 
-TEST_F(DataStoreTest, PlaidServiceExchangePublicToken) {
+TEST_F(DataStoreTest, PlaidServiceStubGetTransactionsReturnsEmpty) {
+    // StubPlaidService returns empty transaction list (no network).
     auto service = create_plaid_service(true);
-    service->initialize("client_id", "secret");
-    auto access_token = service->exchange_public_token("public_token");
-    ASSERT_TRUE(access_token.has_value());
-    ASSERT_EQ(*access_token, "access-sandbox-xxxxx");
+    auto txs = service->get_transactions("acc_123", "2026-01-01", "2026-05-01");
+    ASSERT_TRUE(txs.empty());
 }
 
-TEST_F(DataStoreTest, PlaidServiceGetAccounts) {
+TEST_F(DataStoreTest, PlaidServiceStubGetAccountsReturnsEmpty) {
+    // StubPlaidService returns empty account list (no network).
     auto service = create_plaid_service(true);
-    service->initialize("client_id", "secret");
-    auto accounts = service->get_accounts("access_token");
+    auto accounts = service->get_accounts("acc_123");
     ASSERT_TRUE(accounts.empty());
 }
 
-TEST_F(DataStoreTest, PlaidServiceGetTransactions) {
+TEST_F(DataStoreTest, PlaidServiceStubUnlinkAccount) {
     auto service = create_plaid_service(true);
-    service->initialize("client_id", "secret");
-    auto txs = service->get_transactions("access_token", "2026-01-01", "2026-05-01");
-    ASSERT_TRUE(txs.empty());
+    ASSERT_TRUE(service->unlink_account("acc_123"));
 }
 
 TEST_F(DataStoreTest, DiscoveryServiceVelocityWithMultipleCategories) {
@@ -697,11 +698,11 @@ TEST_F(DataStoreTest, ConfigManagerPlaidEnvironment) {
     }
 }
 
-TEST_F(DataStoreTest, PlaidServiceInitializeWithEnvironment) {
+TEST_F(DataStoreTest, PlaidServiceStubTimeoutDoesNotCrash) {
+    // set_timeout on stub must not crash.
     auto service = create_plaid_service(true);
-    ASSERT_TRUE(service->initialize("test", "key", PlaidEnvironment::Development));
-    ASSERT_TRUE(service->initialize("test", "key", PlaidEnvironment::Production));
-    ASSERT_TRUE(service->initialize("test", "key", PlaidEnvironment::Sandbox));
+    service->set_timeout(std::chrono::seconds{60});
+    ASSERT_TRUE(service->is_stub());
 }
 
 TEST_F(DataStoreTest, HighVolumeStressTest) {

@@ -90,7 +90,7 @@ bool JsonStorageService::parse_accounts(const json& j, std::vector<Account>& acc
         acc.balance = a.value("balance", 0.0);
         acc.institution = a.value("institution", "");
         acc.plaid_item_id = a.value("plaid_item_id", "");
-        acc.plaid_access_token = a.value("plaid_access_token", "");
+        acc.is_plaid_linked = a.value("is_plaid_linked", false);
         acc.is_active = a.value("is_active", true);
         accounts.push_back(acc);
     }
@@ -193,7 +193,7 @@ bool JsonStorageService::save(
                     {"balance", acc.balance},
                     {"institution", acc.institution},
                     {"plaid_item_id", acc.plaid_item_id},
-                    {"plaid_access_token", acc.plaid_access_token},
+                    {"is_plaid_linked", acc.is_plaid_linked},
                     {"is_active", acc.is_active}
                 });
             }

@@ -20,7 +20,7 @@ struct Account {
     double balance;
     std::string institution;
     std::string plaid_item_id;       // Populated when linked via Plaid
-    std::string plaid_access_token; // Populated when linked via Plaid
+    bool is_plaid_linked = false;   // True when an encrypted token is stored server-side
     bool is_active = true;
 
     std::string type_to_string() const;
