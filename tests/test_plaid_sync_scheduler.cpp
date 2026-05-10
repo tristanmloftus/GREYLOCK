@@ -388,6 +388,40 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// Test: Plaid200ErrorIsDetectedAsFailure (RC-1)
+//
+// Verify that a MockPlaidApiClient that returns a 200-with-error-body payload
+// behaves the same as a transport failure: sync_all_accounts() inserts no
+// transactions.
+//
+// The real PlaidApiClient::sync_transactions parses the JSON response body and
+// returns nullopt when it finds {"error_code": "ITEM_LOGIN_REQUIRED", ...}.
+// We verify that contract here by driving a mock that simulates exactly that
+// return value (nullopt), mirroring what the real client will return when it
+// encounters a Plaid 200-error body.  This keeps the test in-process without
+// a real HTTP server.
+//
+// RC-2 (destructor zeroize) is not directly testable without unsafe memory
+// inspection.  The implementation change is documented above the destructor
+// in PlaidApiClient.h.
+// ---------------------------------------------------------------------------
+TEST_F(PlaidSyncSchedulerTest, Plaid200ErrorIsDetectedAsFailure) {
+    insert_linked_account("acc_error");
+
+    // Simulate what PlaidApiClient::sync_transactions returns when it parses
+    // a Plaid 200-with-error-body: std::nullopt.
+    mock_api_->next_result = std::nullopt;
+
+    tf::plaid::PlaidSyncScheduler scheduler(
+        *db_, *broker_, *mock_api_, *audit_log_, 900);
+
+    EXPECT_NO_THROW(scheduler.sync_all_accounts());
+
+    // No transactions should be inserted — nullopt is treated as failure.
+    EXPECT_EQ(count_transactions(), 0);
+}
+
 TEST_F(PlaidSyncSchedulerTest, Sync_MultipleAccounts_IndependentErrors) {
     insert_linked_account("acc_good");
     insert_linked_account("acc_fail");

@@ -173,6 +173,14 @@ std::optional<TransactionList> PlaidApiClient::sync_transactions(
         return std::nullopt;
     }
 
+    // RC-1: Detect Plaid 200-with-error-body (e.g. ITEM_LOGIN_REQUIRED).
+    // Plaid sometimes returns HTTP 200 with an error payload instead of data.
+    if (resp_json.contains("error_code") && !resp_json["error_code"].is_null()) {
+        std::cerr << "PlaidApiClient::sync_transactions: Plaid error_code="
+                  << resp_json.value("error_code", "unknown") << "\n";
+        return std::nullopt;
+    }
+
     TransactionList result;
 
     // added
@@ -289,6 +297,14 @@ std::optional<TransactionList> PlaidApiClient::fetch_transactions(
         resp_json = json::parse(resp_opt->body);
     } catch (...) {
         std::cerr << "PlaidApiClient::fetch_transactions: JSON parse failed\n";
+        return std::nullopt;
+    }
+
+    // RC-1: Detect Plaid 200-with-error-body (e.g. ITEM_LOGIN_REQUIRED).
+    // Plaid sometimes returns HTTP 200 with an error payload instead of data.
+    if (resp_json.contains("error_code") && !resp_json["error_code"].is_null()) {
+        std::cerr << "PlaidApiClient::fetch_transactions: Plaid error_code="
+                  << resp_json.value("error_code", "unknown") << "\n";
         return std::nullopt;
     }
 

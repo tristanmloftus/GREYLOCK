@@ -24,6 +24,8 @@
 
 #include "../../src/services/IHttpClient.h"
 
+#include <sodium.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -74,7 +76,14 @@ public:
     // http_client must outlive this object.
     explicit PlaidApiClient(IHttpClient& http_client);
 
-    virtual ~PlaidApiClient() = default;
+    // RC-2: Zero heap memory holding PLAID_CLIENT_ID and PLAID_SECRET on
+    // destruction.  std::string's destructor deallocates but does not zero,
+    // leaving credentials in freed memory.  sodium_memzero() is guaranteed not
+    // to be elided by the optimizer (unlike memset).
+    virtual ~PlaidApiClient() {
+        sodium_memzero(client_id_.data(), client_id_.size());
+        sodium_memzero(secret_.data(), secret_.size());
+    }
 
     // Non-copyable / non-movable (holds a reference to IHttpClient).
     PlaidApiClient(const PlaidApiClient&) = delete;
