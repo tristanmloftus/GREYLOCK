@@ -235,9 +235,10 @@ TEST(RemoteBackendStorageServiceTests, Load_TokenNeverExposedInAccount) {
     ASSERT_TRUE(ok);
     ASSERT_EQ(accounts.size(), 1u);
 
-    // plaid_access_token must always be empty — never read from server response.
-    EXPECT_EQ(accounts[0].plaid_access_token, "")
-        << "plaid_access_token must never be populated from the server response";
+    // is_plaid_linked reflects the server-side token presence flag.
+    // plaid_access_token was removed by 4.C — tokens are managed server-side.
+    EXPECT_FALSE(accounts[0].is_plaid_linked)
+        << "is_plaid_linked should default to false when not set in server response";
 }
 
 // --------------------------------------------------------------------------

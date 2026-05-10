@@ -108,11 +108,10 @@ public:
         if (!client_id.empty() && !secret.empty()) {
             use_stub = false;
         }
-        auto plaid = create_plaid_service(use_stub, http_client);
+        auto plaid = create_plaid_service(use_stub);
         if (use_stub) {
             Logger::instance().warning("Using stub Plaid service - no credentials configured");
         }
-        plaid->initialize(client_id, secret, env);
         services.set_plaid(plaid);
 
         // Wire platform-appropriate secret store.
@@ -681,31 +680,25 @@ int main(int argc, char** argv) {
             app.save();
             return true;
         }
-        // Link Plaid account
+        // Link Plaid account (v0.2: server-mediated via PlaidTokenBroker)
         if (event == Event::Character('p') || event == Event::Character('P')) {
-            auto plaid = app.services.get_plaid();
-            if (plaid) {
-                std::string link_token = plaid->create_link_token();
-                app.status_message = "Plaid: Token=" + link_token + " | Use Plaid Sandbox to get public token, then press 'L' to link";
-            }
+            app.status_message = "Plaid: Use 'L' to link an account via the server endpoint.";
             return true;
         }
-        // Link with public token
+        // Link with public token (v0.2: pass account_id + public_token to server)
         if (event == Event::Character('l') || event == Event::Character('L')) {
             auto plaid = app.services.get_plaid();
-            if (plaid) {
-                auto result = plaid->exchange_public_token("public-sandbox-test");
-                if (result) {
-                    Account acc;
-                    acc.name = "Plaid Account (Sandbox)";
-                    acc.entity_id = app.data_store.entities[app.current_entity].id;
-                    acc.type = AccountType::Checking;
-                    acc.balance = 1000.00;
-                    acc.institution = "Plaid Sandbox Bank";
-                    app.data_store.add_account(acc);
-                    app.update_views_for_entity();
-                    app.status_message = "Account linked from Plaid Sandbox!";
+            if (plaid && !app.data_store.entities.empty() &&
+                !app.data_store.accounts.empty()) {
+                const auto& acc = app.data_store.accounts[0];
+                bool ok = plaid->link_account(acc.id, "public-sandbox-test");
+                if (ok) {
+                    app.status_message = "Account linked via server.";
+                } else {
+                    app.status_message = "Link failed: " + plaid->get_last_error();
                 }
+            } else {
+                app.status_message = "No accounts to link.";
             }
             return true;
         }

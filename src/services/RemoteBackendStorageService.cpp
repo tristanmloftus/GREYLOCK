@@ -9,8 +9,8 @@
 //   3. For each account:
 //        GET /accounts/<id>/transactions     → Transaction list
 //
-// SECURITY: plaid_access_token is ALWAYS set to "" — the server never
-// returns accounts.encrypted_token in any response.
+// SECURITY: plaid_access_token was removed (4.C). Token management is via
+// server-side PlaidTokenBroker. is_plaid_linked is populated from API response.
 //
 // save() — STUB: write-through not yet implemented (Phase 5).
 
@@ -77,8 +77,9 @@ static Account json_to_account(const json& j) {
     } else {
         a.plaid_item_id = "";
     }
-    // SECURITY: plaid_access_token is never sent by the server — always "".
-    a.plaid_access_token = "";
+    // plaid_access_token removed by 4.C — token is managed by server-side PlaidTokenBroker.
+    // is_plaid_linked is populated from the JSON field below if present.
+    a.is_plaid_linked = j.value("is_plaid_linked", false);
     a.is_active   = true;
     return a;
 }
