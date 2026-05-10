@@ -638,9 +638,12 @@ if(NOT _SQLCIPHER_FOUND)
   # SQLCipher installs headers under include/sqlcipher/ — use that as the
   # include root so that #include <sqlite3.h> resolves to the SQLCipher build
   # (not the system plain SQLite).
+  # PATH_SUFFIXES sqlcipher covers Debian's libsqlcipher-dev which installs to
+  # /usr/include/sqlcipher/sqlite3.h without SQLCIPHER_ROOT being set.
   find_path(_SQLCIPHER_INCLUDE_DIR
     NAMES sqlite3.h
     HINTS "${SQLCIPHER_ROOT}/include/sqlcipher"
+    PATH_SUFFIXES sqlcipher
     REQUIRED
   )
   if(_SQLCIPHER_LIB AND _SQLCIPHER_INCLUDE_DIR)
