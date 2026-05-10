@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -246,21 +247,53 @@ int main(int argc, char* argv[]) {
     std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
 
     // Enforce master key policy for file databases (not applicable to :memory:).
+    //
+    // Detection logic:
+    //   - If TF_MASTER_KEY is set: always use the key.
+    //   - If TF_MASTER_KEY is unset AND file does NOT exist: create unencrypted
+    //     (dev fallback; warn the operator).
+    //   - If TF_MASTER_KEY is unset AND file EXISTS AND has the SQLite magic
+    //     header ("SQLite format 3\x00"): it is a valid plain SQLite file;
+    //     open without a key (warn; this handles dev/test scenarios where
+    //     the server was previously run without encryption).
+    //   - If TF_MASTER_KEY is unset AND file EXISTS AND does NOT have the
+    //     SQLite magic: it may be an SQLCipher-encrypted file; hard-fail to
+    //     prevent data corruption or silent key mismatch.
     if (!master_key_hex.has_value()) {
         bool db_exists = std::filesystem::exists(db_path);
         if (db_exists) {
-            std::cerr << "ERROR: TF_MASTER_KEY is not set but database file '"
-                      << db_path
-                      << "' already exists.\n"
-                      << "  Refusing to open a possibly-encrypted database without a key.\n"
-                      << "  Set TF_MASTER_KEY to a 64-hex-char (32-byte) key, "
-                         "or remove the database file to start fresh.\n";
-            return 1;
+            // Peek at the first 16 bytes: SQLite magic = "SQLite format 3\x00".
+            static const char kSqliteMagic[] = "SQLite format 3";
+            bool is_plain_sqlite = false;
+            {
+                std::ifstream f(db_path, std::ios::binary);
+                if (f.is_open()) {
+                    char buf[16] = {};
+                    f.read(buf, 15);
+                    is_plain_sqlite = (f.gcount() == 15) &&
+                        (std::string(buf, 15) == kSqliteMagic);
+                }
+            }
+            if (!is_plain_sqlite) {
+                std::cerr << "ERROR: TF_MASTER_KEY is not set but database file '"
+                          << db_path
+                          << "' already exists and does not appear to be a plain SQLite file.\n"
+                          << "  It may be an SQLCipher-encrypted database.\n"
+                          << "  Set TF_MASTER_KEY to a 64-hex-char (32-byte) key, "
+                             "or remove the database file to start fresh.\n";
+                return 1;
+            }
+            // Plain SQLite file exists without a key — proceed with warning.
+            std::cerr << "WARNING: TF_MASTER_KEY is not set — "
+                         "opening existing unencrypted database at rest.\n"
+                         "  This is acceptable for local development only.\n"
+                         "  Set TF_MASTER_KEY to encrypt the database.\n";
+        } else {
+            // File does not exist — will be created unencrypted (dev fallback).
+            std::cerr << "WARNING: TF_MASTER_KEY is not set — "
+                         "database will be unencrypted at rest.\n"
+                         "  This is acceptable for local development only.\n";
         }
-        // File does not exist — will be created unencrypted (dev fallback).
-        std::cerr << "WARNING: TF_MASTER_KEY is not set — "
-                     "database will be unencrypted at rest.\n"
-                     "  This is acceptable for local development only.\n";
     }
 
     // One-line status line for operators (GUARDRAIL: do not log key value).
