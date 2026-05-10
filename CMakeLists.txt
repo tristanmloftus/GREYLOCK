@@ -405,37 +405,38 @@ add_test(NAME CurlHttpClientTests COMMAND CurlHttpClientTests)
 # --------------------------------------------------------------------------
 # SecretStoreTests
 # Tests for ISecretStore: KeychainSecretStore (macOS) / DpapiSecretStore (Windows).
-# Exercises all 10 contract properties (put/get round-trips, missing-key semantics,
-# remove idempotency, overwrite, binary payloads up to 64 KiB, multi-key isolation).
-# All test keys are prefixed "tf-test-" and removed in TearDown — safe to run on
-# a machine that already has production TerminalFinance keychain/registry items.
+# Only built on platforms with a real ISecretStore implementation. On Linux
+# (CI runner), SECRET_STORE_SOURCES is empty and the test file references the
+# concrete platform implementations directly — so this target is skipped.
 # --------------------------------------------------------------------------
-add_executable(SecretStoreTests
-    tests/test_secret_store.cpp
-    ${SECRET_STORE_SOURCES}
-)
-
-if(MSVC)
-  target_compile_options(SecretStoreTests PRIVATE /MT)
-endif()
-
-target_link_libraries(SecretStoreTests PRIVATE
-    gtest
-    gtest_main
-)
-
-if(WIN32)
-  # DpapiSecretStore: DPAPI (crypt32) + registry (advapi32).
-  target_link_libraries(SecretStoreTests PRIVATE crypt32 advapi32)
-elseif(APPLE)
-  # KeychainSecretStore: Security.framework + CoreFoundation.
-  target_link_libraries(SecretStoreTests PRIVATE
-    "-framework Security"
-    "-framework CoreFoundation"
+if(WIN32 OR APPLE)
+  add_executable(SecretStoreTests
+      tests/test_secret_store.cpp
+      ${SECRET_STORE_SOURCES}
   )
-endif()
 
-add_test(NAME SecretStoreTests COMMAND SecretStoreTests)
+  if(MSVC)
+    target_compile_options(SecretStoreTests PRIVATE /MT)
+  endif()
+
+  target_link_libraries(SecretStoreTests PRIVATE
+      gtest
+      gtest_main
+  )
+
+  if(WIN32)
+    # DpapiSecretStore: DPAPI (crypt32) + registry (advapi32).
+    target_link_libraries(SecretStoreTests PRIVATE crypt32 advapi32)
+  elseif(APPLE)
+    # KeychainSecretStore: Security.framework + CoreFoundation.
+    target_link_libraries(SecretStoreTests PRIVATE
+      "-framework Security"
+      "-framework CoreFoundation"
+    )
+  endif()
+
+  add_test(NAME SecretStoreTests COMMAND SecretStoreTests)
+endif()
 
 # --------------------------------------------------------------------------
 # CryptoTests
