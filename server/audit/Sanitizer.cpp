@@ -20,15 +20,17 @@ static constexpr size_t MAX_TOTAL_BYTES = 64 * 1024; // 64 KiB
 
 // Allowed keys — safe identifiers even when they substring-match the deny list.
 // "tokenId" carves out from "token"; "key" fields not in allow-list are denied.
+// Keys are stored in lowercase so lookup is case-insensitive (consistent with
+// the case-insensitive deny-list policy).
 static const std::unordered_set<std::string> ALLOWED_KEYS = {
-    "userId",
-    "sessionId",
-    "accountId",
-    "transactionId",
-    "entityId",
-    "tokenId",           // carve-out: id of the token row, never the token bytes
-    "subjectId",
-    "actorUserId",
+    "userid",
+    "sessionid",
+    "accountid",
+    "transactionid",
+    "entityid",
+    "tokenid",           // carve-out: id of the token row, never the token bytes
+    "subjectid",
+    "actoruserid",
     "domain",
     "outcome",
     "action",
@@ -41,8 +43,8 @@ static const std::unordered_set<std::string> ALLOWED_KEYS = {
     "added",
     "modified",
     "removed",
-    "httpStatus",
-    "errorCode",
+    "httpstatus",
+    "errorcode",
     "transports",
 };
 
@@ -85,13 +87,16 @@ static std::string to_lower(const std::string& s) {
 }
 
 static bool is_key_allowed(const std::string& key) {
+    // Lowercase once; use for both allowlist and deny-list lookups so
+    // case-sensitivity is consistent across both checks (GUARDRAIL F-2).
+    const std::string key_lower = to_lower(key);
+
     // Allowlist takes precedence.
-    if (ALLOWED_KEYS.count(key) > 0) {
+    if (ALLOWED_KEYS.count(key_lower) > 0) {
         return true;
     }
-    const std::string lower = to_lower(key);
     for (const auto& sub : DENY_KEY_SUBSTRINGS) {
-        if (lower.find(sub) != std::string::npos) {
+        if (key_lower.find(sub) != std::string::npos) {
             return false;
         }
     }

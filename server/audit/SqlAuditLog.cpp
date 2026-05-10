@@ -81,15 +81,19 @@ void SqlAuditLog::append_locked(const AuditEvent& evt,
         auto entry_hash  = compute_entry_hash(canonical);
 
         // Step 4: INSERT.
+        // Bind seq explicitly so the stored seq always matches the seq used
+        // when computing entry_hash.  AUTOINCREMENT still enforces monotonic
+        // increase as a sanity net but is no longer the source of truth.
         const int64_t ts_unix_nanos = evt.ts_ms * INT64_C(1'000'000);
 
         auto ins = db_.prepare(
             "INSERT INTO audit_log "
-            "(ts_unix_nanos, actor_user_id, actor_kind, domain, subject_id, "
+            "(seq, ts_unix_nanos, actor_user_id, actor_kind, domain, subject_id, "
             " subject_kind, action, outcome, details_json, prev_hash, entry_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
-        sqlite3_bind_int64(ins.get(), 1, ts_unix_nanos);
+        sqlite3_bind_int64(ins.get(), 1, static_cast<sqlite3_int64>(next_seq));
+        sqlite3_bind_int64(ins.get(), 2, ts_unix_nanos);
 
         auto bind_text = [&](int idx, const std::string& s) {
             if (s.empty()) {
@@ -99,29 +103,29 @@ void SqlAuditLog::append_locked(const AuditEvent& evt,
                                   static_cast<int>(s.size()), SQLITE_STATIC);
             }
         };
-        bind_text(2, evt.actor_user_id);
-        sqlite3_bind_text(ins.get(), 3, evt.actor_kind.c_str(),
+        bind_text(3, evt.actor_user_id);
+        sqlite3_bind_text(ins.get(), 4, evt.actor_kind.c_str(),
                           static_cast<int>(evt.actor_kind.size()), SQLITE_STATIC);
-        bind_text(4, evt.domain);
-        bind_text(5, evt.subject_id);
-        bind_text(6, evt.subject_kind);
-        sqlite3_bind_text(ins.get(), 7, evt.action.c_str(),
+        bind_text(5, evt.domain);
+        bind_text(6, evt.subject_id);
+        bind_text(7, evt.subject_kind);
+        sqlite3_bind_text(ins.get(), 8, evt.action.c_str(),
                           static_cast<int>(evt.action.size()), SQLITE_STATIC);
-        sqlite3_bind_text(ins.get(), 8, evt.outcome.c_str(),
+        sqlite3_bind_text(ins.get(), 9, evt.outcome.c_str(),
                           static_cast<int>(evt.outcome.size()), SQLITE_STATIC);
 
         // details_json: store as BLOB
         if (details_json_str.empty()) {
-            sqlite3_bind_null(ins.get(), 9);
+            sqlite3_bind_null(ins.get(), 10);
         } else {
-            sqlite3_bind_blob(ins.get(), 9, details_json_str.data(),
+            sqlite3_bind_blob(ins.get(), 10, details_json_str.data(),
                               static_cast<int>(details_json_str.size()), SQLITE_STATIC);
         }
 
-        sqlite3_bind_blob(ins.get(), 10,
+        sqlite3_bind_blob(ins.get(), 11,
                           prev_hash.data(), static_cast<int>(prev_hash.size()),
                           SQLITE_STATIC);
-        sqlite3_bind_blob(ins.get(), 11,
+        sqlite3_bind_blob(ins.get(), 12,
                           entry_hash.data(), static_cast<int>(entry_hash.size()),
                           SQLITE_STATIC);
 

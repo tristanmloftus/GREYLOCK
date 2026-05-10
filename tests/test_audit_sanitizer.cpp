@@ -11,6 +11,10 @@
 //   8. OversizedPayload_Rejected — 65 KiB payload rejected.
 //   9. DeepNested_Rejected — 9-deep nested object rejected.
 //  10. EmptyPayload_Allowed — empty {} passes.
+//  11. BoundaryTokenShape31CharsAccepted — 31-char base64-ish string passes.
+//  12. BoundaryTokenShape32CharsRejected — 32-char base64-ish string rejected.
+//  13. BoundaryHex31CharsAccepted — 31-char hex string passes.
+//  14. BoundaryHex32CharsRejected — 32-char hex string rejected.
 
 #include "server/audit/Sanitizer.h"
 
@@ -172,6 +176,46 @@ TEST(Sanitizer, ShortBase64String_Allowed) {
     auto result = sanitize(details);
     EXPECT_EQ(result.status, SanitizerStatus::Accepted)
         << "Short base64-like string should be allowed. reason: " << result.reason;
+}
+
+// ---------------------------------------------------------------------------
+// Boundary tests: token-shape threshold (32 chars = reject, 31 chars = accept).
+// ---------------------------------------------------------------------------
+
+// 11. 31-char base64-ish string accepted (one below the 32-char floor).
+TEST(Sanitizer, BoundaryTokenShape31CharsAccepted) {
+    std::string b64_31(31, 'A'); // 31 chars, all valid base64 chars
+    json details = {{"reason", b64_31}};
+    auto result = sanitize(details);
+    EXPECT_EQ(result.status, SanitizerStatus::Accepted)
+        << "31-char base64-like value should be accepted. reason: " << result.reason;
+}
+
+// 12. 32-char base64-ish string rejected (at the 32-char floor).
+TEST(Sanitizer, BoundaryTokenShape32CharsRejected) {
+    std::string b64_32(32, 'A'); // 32 chars, all valid base64 chars
+    json details = {{"reason", b64_32}};
+    auto result = sanitize(details);
+    EXPECT_EQ(result.status, SanitizerStatus::Rejected)
+        << "32-char base64-like value should be rejected. reason: " << result.reason;
+}
+
+// 13. 31-char hex string accepted (one below the 32-char floor).
+TEST(Sanitizer, BoundaryHex31CharsAccepted) {
+    std::string hex_31(31, 'a'); // 31 hex chars
+    json details = {{"reason", hex_31}};
+    auto result = sanitize(details);
+    EXPECT_EQ(result.status, SanitizerStatus::Accepted)
+        << "31-char hex value should be accepted. reason: " << result.reason;
+}
+
+// 14. 32-char hex string rejected (at the 32-char floor).
+TEST(Sanitizer, BoundaryHex32CharsRejected) {
+    std::string hex_32(32, 'a'); // 32 hex chars — token-shape
+    json details = {{"reason", hex_32}};
+    auto result = sanitize(details);
+    EXPECT_EQ(result.status, SanitizerStatus::Rejected)
+        << "32-char hex value should be rejected. reason: " << result.reason;
 }
 
 // ---------------------------------------------------------------------------
