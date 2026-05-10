@@ -32,9 +32,10 @@ namespace fs = std::filesystem;
 static const std::string kKeyA(64, '0');
 static const std::string kKeyB(64, 'a');  // different key
 
-// Helper: generate a unique temp path.
+// Helper: generate a unique temp path. Uses std::filesystem::temp_directory_path()
+// so the test runs on Windows (where /tmp/ doesn't exist) as well as POSIX.
 static std::string tmp_db_path(const char* tag) {
-    return std::string("/tmp/tf_sqlcipher_test_") + tag + ".db";
+    return (fs::temp_directory_path() / (std::string("tf_sqlcipher_test_") + tag + ".db")).string();
 }
 
 // Helper: remove a file if it exists.
