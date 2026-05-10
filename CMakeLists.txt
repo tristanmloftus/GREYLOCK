@@ -543,58 +543,141 @@ endif()
 add_test(NAME ServerHealthzTests COMMAND ServerHealthzTests)
 
 # ==========================================================================
-# Phase 2.B additions — SQLite + migrations layer
-# ALL additions below this line were added by 2.B.  Do not move them above
-# the existing target definitions to avoid 2.C merge conflicts.
+# Phase 2.B / Phase 4.E additions — SQLCipher (AES-256 encrypted SQLite)
+# ALL additions below this line were added by 2.B and extended by 4.E.
+# Do not move them above the existing target definitions to avoid 2.C conflicts.
 # ==========================================================================
 
 # --------------------------------------------------------------------------
-# SQLite amalgamation via FetchContent.
+# SQLCipher — AES-256 encrypted SQLite.  Replaces the plain sqlite-amalgamation
+# from Phase 2.B.  SQLCipher is the canonical at-rest encryption solution
+# per V0_2_PLAN.md §c (Q1=A locked) and Phase 4 plan §g.
 #
-# Version pin: 3.46.1 (2024-08-13).  Change SQLITE_AMALGAMATION_VERSION to
-# pick up a different release; the URL is computed from the version below.
-# The amalgamation zip ships sqlite3.c + sqlite3.h as a single self-contained
-# compilation unit — no Autotools, no configure step, no cmake required.
+# Phase 4.E decision: Path (a) — use the installed SQLCipher library.
+# SQLCipher does NOT ship a CMake-ready amalgamation for FetchContent (its
+# amalgamation is produced by Autotools at configure time).  Building from
+# source via FetchContent would require invoking Autotools — fragile on macOS
+# and unsupported on Windows MSVC.  Instead, we follow the same probe
+# strategy as libsodium and libcurl:
 #
-# Pinning strategy: version + SHA256 hash are the canonical pin.  The hash
-# below was computed against the official sqlite.org zip on 2026-05-09.
-# Update both fields together when upgrading sqlite.
+#   1. macOS / Homebrew: probe `brew --prefix sqlcipher`, set SQLCIPHER_ROOT,
+#      find_library + find_path, create IMPORTED STATIC target.
+#   2. Windows (vcpkg): TODO — sqlcipher vcpkg port available as `sqlcipher`.
+#      find_package or find_library via vcpkg toolchain.
+#   3. Fallback: FATAL_ERROR with install instructions.
 #
-# Windows: the static lib links into TerminalFinanceServer and MigrationsTests.
-# macOS:   same.
-# TUI (TerminalFinance): does NOT link sqlite3 — storage goes through BackendClient.
+# Target name: SQLCipher::sqlcipher (replaces the old sqlite3 target from 2.B).
+# Include path: SQLCIPHER_ROOT/include/sqlcipher — SQLCipher installs sqlite3.h
+#   under a sqlcipher/ subdirectory to avoid colliding with system SQLite.
+#   We set the include path so <sqlite3.h> resolves to the SQLCipher version.
+#
+# STOP CONDITION: if Homebrew sqlcipher is missing and FetchContent source-
+#   build is unavailable, the build FAILS with a message prompting the operator
+#   to install sqlcipher via Homebrew.  Do NOT paper over a missing encryption
+#   dependency.
 # --------------------------------------------------------------------------
-set(SQLITE_AMALGAMATION_VERSION "3460100"
-    CACHE STRING "SQLite amalgamation version number (e.g. 3460100 for 3.46.1)")
 
-FetchContent_Declare(sqlite
-  URL "https://www.sqlite.org/2024/sqlite-amalgamation-${SQLITE_AMALGAMATION_VERSION}.zip"
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(sqlite)
-
-# Build the amalgamation as a static library so it compiles once and links
-# into multiple targets without ODR violations.
-if(NOT TARGET sqlite3)
-  add_library(sqlite3 STATIC "${sqlite_SOURCE_DIR}/sqlite3.c")
-  target_include_directories(sqlite3 PUBLIC "${sqlite_SOURCE_DIR}")
-  # Suppress MSVC warnings in the amalgamation (not our code).
-  if(MSVC)
-    target_compile_options(sqlite3 PRIVATE /W0 /MT)
-    # /MT must match the test executables that link sqlite3 (DataStoreTests,
-    # MigrationsTests, etc. all set /MT). Without this match, sqlite3.lib
-    # references CRT imports (__imp_strspn, _beginthreadex, _endthreadex) that
-    # don't resolve against the static CRT.
-  else()
-    target_compile_options(sqlite3 PRIVATE -w)
+if(APPLE AND NOT DEFINED SQLCIPHER_ROOT)
+  find_program(_BREW_BIN_SC brew)
+  if(_BREW_BIN_SC)
+    execute_process(
+      COMMAND "${_BREW_BIN_SC}" --prefix sqlcipher
+      OUTPUT_VARIABLE _BREW_SQLCIPHER_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _BREW_SQLCIPHER_RESULT
+      ERROR_QUIET
+    )
+    if(_BREW_SQLCIPHER_RESULT EQUAL 0 AND IS_DIRECTORY "${_BREW_SQLCIPHER_PREFIX}")
+      set(SQLCIPHER_ROOT "${_BREW_SQLCIPHER_PREFIX}" CACHE PATH
+          "Homebrew sqlcipher prefix" FORCE)
+      message(STATUS "SQLCipher: using Homebrew sqlcipher at ${SQLCIPHER_ROOT}")
+    endif()
   endif()
 endif()
+
+set(_SQLCIPHER_FOUND FALSE)
+
+if(WIN32)
+  # Windows: sqlcipher is available in vcpkg.
+  # Install with: vcpkg install sqlcipher:x64-windows-static
+  # Then pass -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+  find_library(_SQLCIPHER_LIB
+    NAMES sqlcipher
+    REQUIRED
+  )
+  find_path(_SQLCIPHER_INCLUDE
+    NAMES sqlcipher/sqlite3.h sqlite3.h
+    REQUIRED
+  )
+  if(_SQLCIPHER_LIB AND _SQLCIPHER_INCLUDE)
+    add_library(SQLCipher::sqlcipher STATIC IMPORTED GLOBAL)
+    set_target_properties(SQLCipher::sqlcipher PROPERTIES
+      IMPORTED_LOCATION "${_SQLCIPHER_LIB}"
+      INTERFACE_INCLUDE_DIRECTORIES "${_SQLCIPHER_INCLUDE}"
+    )
+    set(_SQLCIPHER_FOUND TRUE)
+    message(STATUS "SQLCipher: Windows — library at ${_SQLCIPHER_LIB}")
+  endif()
+endif()
+
+if(NOT _SQLCIPHER_FOUND)
+  # macOS / Linux: search in SQLCIPHER_ROOT (Homebrew prefix) then system paths.
+  find_library(_SQLCIPHER_LIB
+    NAMES sqlcipher
+    HINTS "${SQLCIPHER_ROOT}/lib"
+    REQUIRED
+  )
+  # SQLCipher installs headers under include/sqlcipher/ — use that as the
+  # include root so that #include <sqlite3.h> resolves to the SQLCipher build
+  # (not the system plain SQLite).
+  find_path(_SQLCIPHER_INCLUDE_DIR
+    NAMES sqlite3.h
+    HINTS "${SQLCIPHER_ROOT}/include/sqlcipher"
+    REQUIRED
+  )
+  if(_SQLCIPHER_LIB AND _SQLCIPHER_INCLUDE_DIR)
+    add_library(SQLCipher::sqlcipher STATIC IMPORTED GLOBAL)
+    set_target_properties(SQLCipher::sqlcipher PROPERTIES
+      IMPORTED_LOCATION "${_SQLCIPHER_LIB}"
+      INTERFACE_INCLUDE_DIRECTORIES "${_SQLCIPHER_INCLUDE_DIR}"
+    )
+    set(_SQLCIPHER_FOUND TRUE)
+    message(STATUS "SQLCipher: library at ${_SQLCIPHER_LIB}, "
+                   "includes at ${_SQLCIPHER_INCLUDE_DIR}")
+  endif()
+endif()
+
+if(NOT _SQLCIPHER_FOUND)
+  if(APPLE)
+    message(FATAL_ERROR
+      "SQLCipher was not found on this macOS system.\n"
+      "Install via Homebrew: brew install sqlcipher\n"
+      "Then re-run cmake.")
+  elseif(WIN32)
+    message(FATAL_ERROR
+      "SQLCipher was not found. On Windows, install via vcpkg:\n"
+      "  vcpkg install sqlcipher:x64-windows-static\n"
+      "Then pass -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake to cmake.")
+  else()
+    message(FATAL_ERROR
+      "SQLCipher was not found. Install via your system package manager "
+      "(e.g. apt install libsqlcipher-dev) then re-run cmake.")
+  endif()
+endif()
+
+# SQLCipher requires OpenSSL::Crypto for its AES implementation.
+# OpenSSL is already a required dependency (found earlier in this file).
+# Link it into SQLCipher's IMPORTED target so all consumers inherit it.
+set_property(TARGET SQLCipher::sqlcipher APPEND PROPERTY
+  INTERFACE_LINK_LIBRARIES OpenSSL::Crypto
+)
 
 # --------------------------------------------------------------------------
 # Server DB sources (Database + Migrations).
 # These are added to TerminalFinanceServer via target_sources() so we do NOT
 # need to modify the existing add_executable() line — minimizing 2.C conflict.
 # [2.B EXTENSION: TerminalFinanceServer source list extended here]
+# [4.E: sqlite3 target → SQLCipher::sqlcipher]
 # --------------------------------------------------------------------------
 set(SERVER_DB_SOURCES
   server/db/Database.cpp
@@ -603,16 +686,16 @@ set(SERVER_DB_SOURCES
 
 target_sources(TerminalFinanceServer PRIVATE ${SERVER_DB_SOURCES})
 
-target_include_directories(TerminalFinanceServer PRIVATE
-  "${sqlite_SOURCE_DIR}"
-)
+# No additional include_directories needed — SQLCipher::sqlcipher's
+# INTERFACE_INCLUDE_DIRECTORIES propagates the include path transitively.
 
-target_link_libraries(TerminalFinanceServer PRIVATE sqlite3)
+target_link_libraries(TerminalFinanceServer PRIVATE SQLCipher::sqlcipher)
 
 # --------------------------------------------------------------------------
 # MigrationsTests
 # Unit tests for the Migrations framework and M001_initial_schema.
-# Uses an in-memory SQLite database (:memory:) — no disk files, no cert setup.
+# Uses an in-memory SQLCipher database (:memory:) — no disk files, no cert setup.
+# [4.E: sqlite3 target → SQLCipher::sqlcipher; passes kTestKey in test code]
 # --------------------------------------------------------------------------
 add_executable(MigrationsTests
   tests/test_migrations.cpp
@@ -625,13 +708,12 @@ endif()
 
 target_include_directories(MigrationsTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(MigrationsTests PRIVATE
   gtest
   gtest_main
-  sqlite3
+  SQLCipher::sqlcipher
 )
 
 add_test(NAME MigrationsTests COMMAND MigrationsTests)
@@ -768,7 +850,6 @@ endif()
 
 target_include_directories(AuthPassphraseTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(AuthPassphraseTests PRIVATE
@@ -814,11 +895,10 @@ endif()
 
 target_include_directories(AuthEnrollmentTokenTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(AuthEnrollmentTokenTests PRIVATE
-  gtest gtest_main ${_SODIUM_TARGET} sqlite3
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher
 )
 
 add_test(NAME AuthEnrollmentTokenTests COMMAND AuthEnrollmentTokenTests)
@@ -838,11 +918,10 @@ endif()
 
 target_include_directories(AuthSessionTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(AuthSessionTests PRIVATE
-  gtest gtest_main ${_SODIUM_TARGET} sqlite3
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher
 )
 
 add_test(NAME AuthSessionTests COMMAND AuthSessionTests)
@@ -939,11 +1018,10 @@ endif()
 
 target_include_directories(AuditReplayTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(AuditReplayTests PRIVATE
-  gtest gtest_main ${_SODIUM_TARGET} sqlite3 nlohmann_json::nlohmann_json
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher nlohmann_json::nlohmann_json
 )
 
 add_test(NAME AuditReplayTests COMMAND AuditReplayTests)
@@ -987,11 +1065,46 @@ endif()
 
 target_include_directories(AuditWriterTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
-  "${sqlite_SOURCE_DIR}"
 )
 
 target_link_libraries(AuditWriterTests PRIVATE
-  gtest gtest_main ${_SODIUM_TARGET} sqlite3 nlohmann_json::nlohmann_json
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher nlohmann_json::nlohmann_json
 )
 
 add_test(NAME AuditWriterTests COMMAND AuditWriterTests)
+
+# ==========================================================================
+# Phase 4.E additions — SqlCipherTests
+# Unit tests for the SQLCipher integration: key application, encryption
+# round-trip, mismatch detection, and key-format validation.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# SqlCipherTests
+# Tests the Database class's SQLCipher key plumbing:
+#   - cipher_version PRAGMA is reachable (SQLCipher, not plain SQLite)
+#   - wrong key → throw on first query
+#   - correct key → row readable after reopen
+#   - no key on encrypted file → throw on first prepare
+#   - invalid key format (non-hex, wrong length) → throw at construction
+# --------------------------------------------------------------------------
+add_executable(SqlCipherTests
+  tests/test_sqlcipher.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(SqlCipherTests PRIVATE /MT)
+endif()
+
+target_include_directories(SqlCipherTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(SqlCipherTests PRIVATE
+  gtest
+  gtest_main
+  SQLCipher::sqlcipher
+)
+
+add_test(NAME SqlCipherTests COMMAND SqlCipherTests)

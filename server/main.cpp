@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <csignal>
@@ -58,9 +59,30 @@ static uint16_t env_port(const char* name, uint16_t fallback) {
 }
 
 // --------------------------------------------------------------------------
-// open_db_with_migrations: shared helper for both admin CLI and server boot.
+// read_master_key: reads TF_MASTER_KEY from the environment.
+//
+// Returns std::nullopt if the env var is unset or empty.
+// Returns the hex string if set.
+// Does NOT validate format here — Database constructor does that.
+//
+// GUARDRAIL: do NOT log the returned value.
 // --------------------------------------------------------------------------
-static Database open_db_with_migrations(const std::string& db_path) {
+static std::optional<std::string> read_master_key() {
+    const char* val = std::getenv("TF_MASTER_KEY");
+    if (!val || val[0] == '\0') {
+        return std::nullopt;
+    }
+    return std::string(val);
+}
+
+// --------------------------------------------------------------------------
+// open_db_with_migrations: shared helper for both admin CLI and server boot.
+//
+// master_key_hex: passed through to Database constructor.  See Database.h
+// for key format requirements (64 hex chars = 32 bytes).
+// --------------------------------------------------------------------------
+static Database open_db_with_migrations(const std::string& db_path,
+                                        std::optional<std::string> master_key_hex) {
     {
         std::filesystem::path db_file_path(db_path);
         if (db_file_path.has_parent_path()) {
@@ -75,7 +97,7 @@ static Database open_db_with_migrations(const std::string& db_path) {
         }
     }
 
-    Database db(db_path);
+    Database db(db_path, master_key_hex);
 
     Migrations migrations;
     migrations.register_migration({1, "M001_initial_schema", M001_initial_schema_up});
@@ -144,6 +166,22 @@ int main(int argc, char* argv[]) {
     }
 
     // --------------------------------------------------------------------------
+    // Phase 4.E: Read TF_MASTER_KEY from environment.
+    //
+    // Policy (per Q3=A decision):
+    //   - If TF_MASTER_KEY is set: use it as the SQLCipher database key.
+    //   - If TF_MASTER_KEY is unset AND the database file does NOT exist:
+    //       warn and proceed without encryption (dev fallback).
+    //   - If TF_MASTER_KEY is unset AND the database file EXISTS:
+    //       hard-fail — refuse to operate on a possibly-encrypted file without a key.
+    //
+    // GUARDRAIL F-1: master key is from env var only, not derived from any
+    // caller-visible input.
+    // GUARDRAIL: do NOT log the key value.
+    // --------------------------------------------------------------------------
+    std::optional<std::string> master_key_hex = read_master_key();
+
+    // --------------------------------------------------------------------------
     // Admin CLI: --mint-enrollment-token
     // --------------------------------------------------------------------------
     if (do_mint) {
@@ -153,7 +191,7 @@ int main(int argc, char* argv[]) {
         }
         try {
             std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
-            Database db = open_db_with_migrations(db_path);
+            Database db = open_db_with_migrations(db_path, master_key_hex);
 
             auto tok = tf::auth::mint_enrollment_token(mint_email,
                 std::chrono::seconds(mint_ttl_secs));
@@ -174,7 +212,7 @@ int main(int argc, char* argv[]) {
     if (do_list_users) {
         try {
             std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
-            Database db = open_db_with_migrations(db_path);
+            Database db = open_db_with_migrations(db_path, master_key_hex);
             print_users(db);
             return 0;
         } catch (const std::exception& ex) {
@@ -194,6 +232,7 @@ int main(int argc, char* argv[]) {
     //   TF_SERVER_CERT_PATH default dev/cert.pem
     //   TF_SERVER_KEY_PATH  default dev/key.pem
     //   TF_SERVER_BIND_ADDR default 127.0.0.1
+    //   TF_MASTER_KEY       (no default — see encryption policy above)
     //
     // The dev/ directory is gitignored.  Run scripts/generate-dev-cert.sh to
     // populate it with mkcert-issued cert + key.
@@ -206,6 +245,28 @@ int main(int argc, char* argv[]) {
 
     std::string db_path = env_or("TF_DB_PATH", "dev/terminalfinance.db");
 
+    // Enforce master key policy for file databases (not applicable to :memory:).
+    if (!master_key_hex.has_value()) {
+        bool db_exists = std::filesystem::exists(db_path);
+        if (db_exists) {
+            std::cerr << "ERROR: TF_MASTER_KEY is not set but database file '"
+                      << db_path
+                      << "' already exists.\n"
+                      << "  Refusing to open a possibly-encrypted database without a key.\n"
+                      << "  Set TF_MASTER_KEY to a 64-hex-char (32-byte) key, "
+                         "or remove the database file to start fresh.\n";
+            return 1;
+        }
+        // File does not exist — will be created unencrypted (dev fallback).
+        std::cerr << "WARNING: TF_MASTER_KEY is not set — "
+                     "database will be unencrypted at rest.\n"
+                     "  This is acceptable for local development only.\n";
+    }
+
+    // One-line status line for operators (GUARDRAIL: do not log key value).
+    std::cout << "Database opened with master key: "
+              << (master_key_hex.has_value() ? "yes" : "no") << "\n";
+
     std::cout << "TerminalFinance server v0.2\n"
               << "  bind_addr : " << cfg.bind_addr << "\n"
               << "  port      : " << cfg.port      << "\n"
@@ -217,7 +278,7 @@ int main(int argc, char* argv[]) {
     // Use unique_ptr to allow deferred initialization while keeping RAII.
     std::unique_ptr<Database> db_ptr;
     try {
-        db_ptr = std::make_unique<Database>(open_db_with_migrations(db_path));
+        db_ptr = std::make_unique<Database>(open_db_with_migrations(db_path, master_key_hex));
         std::cout << "Database migrations applied.\n\n";
     } catch (const std::exception& ex) {
         std::cerr << "ERROR: schema migration failed: " << ex.what() << "\n";

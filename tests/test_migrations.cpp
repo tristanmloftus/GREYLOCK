@@ -4,6 +4,10 @@
 //
 // All tests use an in-memory SQLite database (:memory:) so they leave no files
 // on disk and run in any working directory.
+//
+// Phase 4.E: Database is now backed by SQLCipher.  In-memory databases work
+// with or without a key.  Tests explicitly pass kTestKey (64 zeros) so the key
+// path is exercised.  Production databases use TF_MASTER_KEY from the env.
 
 #include "server/db/Database.h"
 #include "server/db/Migrations.h"
@@ -13,6 +17,10 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <string>
+
+// Phase 4.E: well-known test key (64 zeros = 32 zero bytes).
+// Production reads TF_MASTER_KEY from env — never hardcoded there.
+static const std::string kTestKey(64, '0');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,7 +66,7 @@ static int schema_migration_count(Database& db, int version) {
 class MigrationsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        db_ = std::make_unique<Database>(":memory:");
+        db_ = std::make_unique<Database>(":memory:", kTestKey);
     }
     void TearDown() override {
         db_.reset();

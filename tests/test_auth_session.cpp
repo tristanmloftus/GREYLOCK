@@ -28,9 +28,14 @@ public:
 static ::testing::Environment* const gEnv =
     ::testing::AddGlobalTestEnvironment(new SessionEnvironment());
 
+// Phase 4.E: well-known test key (64 zeros = 32 zero bytes).
+// Production reads TF_MASTER_KEY from env — never hardcoded there.
+static const std::string kTestKey(64, '0');
+
 // Helper: create an in-memory DB with a dummy users row so FK constraint passes.
+// Pass kTestKey so the SQLCipher key path is exercised in tests.
 static Database make_test_db() {
-    Database db(":memory:");
+    Database db(":memory:", kTestKey);
     Migrations m;
     m.register_migration({1, "M001_initial_schema", M001_initial_schema_up});
     m.apply_pending(db);
