@@ -605,8 +605,15 @@ if(WIN32)
     NAMES sqlcipher
     REQUIRED
   )
+  # vcpkg installs the sqlcipher header at <vcpkg-installed>/include/sqlcipher/sqlite3.h.
+  # We need the include directory to BE that sqlcipher/ subdir so that
+  # `#include <sqlite3.h>` resolves to the SQLCipher build (not plain SQLite).
+  # PATH_SUFFIXES tells find_path to look in <base>/sqlcipher/ and to RETURN
+  # that subdir as the result (mirroring the macOS Homebrew layout where
+  # `<prefix>/include/sqlcipher/sqlite3.h` is the canonical path).
   find_path(_SQLCIPHER_INCLUDE
-    NAMES sqlcipher/sqlite3.h sqlite3.h
+    NAMES sqlite3.h
+    PATH_SUFFIXES sqlcipher
     REQUIRED
   )
   if(_SQLCIPHER_LIB AND _SQLCIPHER_INCLUDE)
@@ -616,7 +623,7 @@ if(WIN32)
       INTERFACE_INCLUDE_DIRECTORIES "${_SQLCIPHER_INCLUDE}"
     )
     set(_SQLCIPHER_FOUND TRUE)
-    message(STATUS "SQLCipher: Windows — library at ${_SQLCIPHER_LIB}")
+    message(STATUS "SQLCipher: Windows — library at ${_SQLCIPHER_LIB}, includes at ${_SQLCIPHER_INCLUDE}")
   endif()
 endif()
 
