@@ -38,6 +38,24 @@ using json = nlohmann::json;
 namespace tf::auth {
 
 // ---------------------------------------------------------------------------
+// Timing-equalization dummy hash (C-1)
+//
+// Computed ONCE at first use (lazy static).  The passphrase value is not a
+// real credential and is not secret — it is intentionally meaningless.  Its
+// sole purpose is to produce a valid Argon2id hash string so that
+// verify_passphrase() can perform the same ~500-900 ms of crypto work on the
+// user-not-found path, preventing timing-based user-existence enumeration.
+//
+// Do NOT log this passphrase; it is not a secret but there is no reason to
+// surface it in logs either.
+// ---------------------------------------------------------------------------
+static const std::vector<std::byte>& dummy_hash() {
+    static const std::vector<std::byte> kDummy =
+        hash_passphrase("tf-dummy-init-passphrase-do-not-use-9c4f");
+    return kDummy;
+}
+
+// ---------------------------------------------------------------------------
 // Timestamp helpers
 // ---------------------------------------------------------------------------
 
@@ -185,95 +203,104 @@ static void handle_enroll(const httplib::Request& req,
         return;
     }
 
-    // Consume enrollment token — inside its own transaction.
-    auto tok_rec = consume_enrollment_token(db, token_str, t);
-    if (!tok_rec.has_value()) {
-        emit_audit(audit_log, ts, "", "system", "", "", "enrollment_token",
-                   "enrollment_token_consumed", "failure",
-                   {{"reason", "invalid_or_expired"}});
-        send_json(res, 400, {{"error", "invalid_enrollment_token"}});
-        return;
-    }
-
-    // Verify email matches the token's email.
-    if (tok_rec->email != email_str) {
-        emit_audit(audit_log, ts, "", "system", "", "", "enrollment_token",
-                   "enrollment_token_consumed", "failure",
-                   {{"reason", "email_mismatch"}});
-        send_json(res, 400, {{"error", "email_mismatch"}});
-        return;
-    }
-
-    // Hash the passphrase (slow; ~0.7 s).
-    std::vector<std::byte> pass_hash;
-    try {
-        pass_hash = hash_passphrase(passphrase_str);
-        // Zeroize passphrase string ASAP.
-        sodium_memzero(passphrase_str.data(), passphrase_str.size());
-    } catch (const std::exception& ex) {
-        send_json(res, 500, {{"error", "internal"}, {"message", ex.what()}});
-        return;
-    }
-
-    // Generate or decode TOTP secret.
-    std::vector<std::byte> totp_secret;
-    if (body.contains("totp_secret") && body["totp_secret"].is_string()) {
-        // Caller supplied a secret (testing / migration scenario).
-        // We accept the base32 string; decode it here.
-        // For simplicity: just generate a new one (the spec says "if null, GENERATE").
-        // If a caller provides totp_secret we still generate fresh — documented.
-        totp_secret = generate_totp_secret();
-    } else {
-        totp_secret = generate_totp_secret();
-    }
-
-    // Generate user ID.
-    std::string user_id = generate_id();
-
-    // Insert user + finish — all inside a transaction.
+    // H-1 + H-2: Token validation, email-match check, user creation, and token
+    // consumption all happen inside ONE BEGIN IMMEDIATE transaction.
+    //
+    // Email-mismatch is deliberately indistinguishable from invalid-token in
+    // both the HTTP response and the audit log action/outcome, so that callers
+    // cannot enumerate valid (token, email) pairs by trying different emails.
     db.exec("BEGIN IMMEDIATE;");
     try {
-        auto stmt = db.prepare(
-            "INSERT INTO users (id, email, created_at_unix, passphrase_hash, totp_secret) "
-            "VALUES (?, ?, ?, ?, ?);"
-        );
-        sqlite3_bind_text(stmt.get(), 1,
-            user_id.data(), static_cast<int>(user_id.size()), SQLITE_STATIC);
-        sqlite3_bind_text(stmt.get(), 2,
-            email_str.data(), static_cast<int>(email_str.size()), SQLITE_STATIC);
-        sqlite3_bind_int64(stmt.get(), 3, t);
-        sqlite3_bind_blob(stmt.get(), 4,
-            pass_hash.data(), static_cast<int>(pass_hash.size()), SQLITE_STATIC);
-        sqlite3_bind_blob(stmt.get(), 5,
-            totp_secret.data(), static_cast<int>(totp_secret.size()), SQLITE_STATIC);
-
-        int rc = stmt.step();
-        if (rc != SQLITE_DONE) {
+        // Step 1: Peek (don't consume yet) to validate the token and get its email.
+        auto peeked = peek_enrollment_token(db, token_str, t);
+        if (!peeked.has_value()) {
             db.exec("ROLLBACK;");
-            // Likely email uniqueness violation.
-            send_json(res, 409, {{"error", "email_already_registered"}});
+            emit_audit(audit_log, ts, "", "system", "", "", "enrollment_token",
+                       "enrollment_token_rejected", "failure");
+            send_json(res, 400, {{"error", "invalid_enrollment_token"}});
             return;
         }
 
+        // Step 2: Email-match check.  If MISMATCH, treat exactly as invalid
+        //         token — do not consume the token, do not reveal its validity.
+        if (peeked->email != email_str) {
+            db.exec("ROLLBACK;");
+            emit_audit(audit_log, ts, "", "system", "", "", "enrollment_token",
+                       "enrollment_token_rejected", "failure");
+            send_json(res, 400, {{"error", "invalid_enrollment_token"}});
+            return;
+        }
+
+        // Step 3: Hash the passphrase (slow; ~0.7 s).  Done inside the
+        //         transaction so we hold the write lock while hashing — the
+        //         BEGIN IMMEDIATE already grabbed the write lock.
+        std::vector<std::byte> pass_hash;
+        try {
+            pass_hash = hash_passphrase(passphrase_str);
+            sodium_memzero(passphrase_str.data(), passphrase_str.size());
+        } catch (const std::exception& ex) {
+            db.exec("ROLLBACK;");
+            send_json(res, 500, {{"error", "internal"}, {"message", ex.what()}});
+            return;
+        }
+
+        // Step 4: Generate TOTP secret and user ID.
+        std::vector<std::byte> totp_secret = generate_totp_secret();
+        std::string user_id = generate_id();
+
+        // Step 5: INSERT user.
+        {
+            auto stmt = db.prepare(
+                "INSERT INTO users (id, email, created_at_unix, passphrase_hash, totp_secret) "
+                "VALUES (?, ?, ?, ?, ?);"
+            );
+            sqlite3_bind_text(stmt.get(), 1,
+                user_id.data(), static_cast<int>(user_id.size()), SQLITE_STATIC);
+            sqlite3_bind_text(stmt.get(), 2,
+                email_str.data(), static_cast<int>(email_str.size()), SQLITE_STATIC);
+            sqlite3_bind_int64(stmt.get(), 3, t);
+            sqlite3_bind_blob(stmt.get(), 4,
+                pass_hash.data(), static_cast<int>(pass_hash.size()), SQLITE_STATIC);
+            sqlite3_bind_blob(stmt.get(), 5,
+                totp_secret.data(), static_cast<int>(totp_secret.size()), SQLITE_STATIC);
+
+            int rc = stmt.step();
+            if (rc != SQLITE_DONE) {
+                db.exec("ROLLBACK;");
+                // Likely email uniqueness violation.
+                send_json(res, 409, {{"error", "email_already_registered"}});
+                return;
+            }
+        }
+
+        // Step 6: Mark token consumed (now that user creation succeeded).
+        if (!mark_enrollment_token_consumed(db, peeked->token_hash, t)) {
+            db.exec("ROLLBACK;");
+            send_json(res, 500, {{"error", "internal"},
+                                  {"message", "token consume failed"}});
+            return;
+        }
+
+        // Step 7: Commit everything atomically.
         db.exec("COMMIT;");
+
+        std::string uri = make_totp_provisioning_uri(email_str, "TerminalFinance",
+                                                      totp_secret);
+
+        emit_audit(audit_log, ts, user_id, "system", "", user_id, "user",
+                   "enrollment_token_consumed", "success");
+
+        send_json(res, 200, {
+            {"user_id", user_id},
+            {"totp_provisioning_uri", uri}
+        });
+
     } catch (...) {
         char* errmsg = nullptr;
         sqlite3_exec(db.raw(), "ROLLBACK;", nullptr, nullptr, &errmsg);
         sqlite3_free(errmsg);
-        throw;
+        send_json(res, 500, {{"error", "internal"}});
     }
-
-    std::string uri = make_totp_provisioning_uri(email_str, "TerminalFinance",
-                                                  totp_secret);
-
-    emit_audit(audit_log, ts, user_id, "system", "", user_id, "user",
-               "enrollment_token_consumed", "success",
-               {{"email", email_str}});
-
-    send_json(res, 200, {
-        {"user_id", user_id},
-        {"totp_provisioning_uri", uri}
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -335,11 +362,17 @@ static void handle_login(const httplib::Request& req,
 
         int rc = stmt.step();
         if (rc != SQLITE_ROW) {
-            // Don't leak email existence — same response as wrong password.
+            // C-1: Timing equalization — perform the SAME Argon2id verify work
+            // regardless of whether the email exists.  This prevents a
+            // timing-based side channel that would reveal user existence.
+            // dummy_hash() is pre-computed once at startup; result is discarded.
+            verify_passphrase(passphrase_str, dummy_hash());
             sodium_memzero(passphrase_str.data(), passphrase_str.size());
-            emit_audit(audit_log, ts, "", "system", "", email_str, "user",
-                       "passphrase_authentication_failure", "failure",
-                       {{"reason", "user_not_found"}});
+            // Use the SAME action name and response shape as wrong-passphrase
+            // failures so neither audit logs nor response timing reveal which
+            // arm was taken.
+            emit_audit(audit_log, ts, "", "system", "", "", "user",
+                       "passphrase_authentication_failure", "failure");
             send_json(res, 401, {{"error", "auth_failed"}});
             return;
         }

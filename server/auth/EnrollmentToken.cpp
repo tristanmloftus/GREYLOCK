@@ -198,4 +198,83 @@ std::optional<EnrollmentTokenRecord> consume_enrollment_token(
     }
 }
 
+// ---------------------------------------------------------------------------
+// peek_enrollment_token
+// ---------------------------------------------------------------------------
+std::optional<EnrollmentTokenRecord> peek_enrollment_token(
+    Database& db,
+    std::string_view raw_token,
+    int64_t now_unix)
+{
+    // Decode hex → raw bytes → hash.
+    auto raw_bytes = hex_to_bytes(raw_token);
+    if (raw_bytes.size() != 32) {
+        return std::nullopt; // invalid token format
+    }
+
+    auto hash = blake2b256(raw_bytes.data(), raw_bytes.size());
+
+    // SELECT the row — caller holds the BEGIN IMMEDIATE transaction.
+    auto sel = db.prepare(
+        "SELECT email, created_at_unix, expires_at_unix, consumed_at_unix "
+        "FROM enrollment_tokens WHERE token_hash = ?;"
+    );
+    sqlite3_bind_blob(sel.get(), 1,
+        hash.data(), static_cast<int>(hash.size()), SQLITE_STATIC);
+
+    int rc = sel.step();
+    if (rc != SQLITE_ROW) {
+        return std::nullopt; // not found
+    }
+
+    std::string email_str;
+    const char* email_text = reinterpret_cast<const char*>(
+        sqlite3_column_text(sel.get(), 0));
+    if (email_text) email_str = email_text;
+
+    int64_t created_at   = sqlite3_column_int64(sel.get(), 1);
+    int64_t expires_at   = sqlite3_column_int64(sel.get(), 2);
+    int     consumed_type = sqlite3_column_type(sel.get(), 3);
+
+    // Check expiry.
+    if (expires_at <= now_unix) {
+        return std::nullopt;
+    }
+
+    // Check not yet consumed.
+    if (consumed_type != SQLITE_NULL) {
+        return std::nullopt;
+    }
+
+    EnrollmentTokenRecord rec;
+    rec.token_hash      = hash;
+    rec.email           = email_str;
+    rec.created_at_unix = created_at;
+    rec.expires_at_unix = expires_at;
+    rec.consumed_at_unix = 0; // not yet consumed
+    return rec;
+}
+
+// ---------------------------------------------------------------------------
+// mark_enrollment_token_consumed
+// ---------------------------------------------------------------------------
+bool mark_enrollment_token_consumed(
+    Database& db,
+    const std::vector<std::byte>& token_hash,
+    int64_t now_unix)
+{
+    auto upd = db.prepare(
+        "UPDATE enrollment_tokens SET consumed_at_unix = ? "
+        "WHERE token_hash = ?;"
+    );
+    sqlite3_bind_int64(upd.get(), 1, now_unix);
+    sqlite3_bind_blob(upd.get(), 2,
+        token_hash.data(), static_cast<int>(token_hash.size()), SQLITE_STATIC);
+    int rc = upd.step();
+    if (rc != SQLITE_DONE) {
+        return false;
+    }
+    return sqlite3_changes(db.raw()) > 0;
+}
+
 } // namespace tf::auth

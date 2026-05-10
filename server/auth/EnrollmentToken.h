@@ -82,4 +82,22 @@ std::optional<EnrollmentTokenRecord> consume_enrollment_token(
     std::string_view raw_token,
     int64_t now_unix);
 
+// Peek at a token record WITHOUT marking it consumed.
+// Hashes raw_token, SELECTs the row, checks expiry and not-yet-consumed.
+// Returns the record (with email) on success, or nullopt on invalid/expired/consumed.
+// Does NOT open or close any transaction — caller must hold one.
+std::optional<EnrollmentTokenRecord> peek_enrollment_token(
+    Database& db,
+    std::string_view raw_token,
+    int64_t now_unix);
+
+// Mark a token consumed by its hex-encoded token_hash.
+// Runs a single UPDATE; does NOT wrap its own transaction.
+// Caller must hold a BEGIN IMMEDIATE transaction.
+// Returns false if the UPDATE affected zero rows (token not found).
+bool mark_enrollment_token_consumed(
+    Database& db,
+    const std::vector<std::byte>& token_hash,
+    int64_t now_unix);
+
 } // namespace tf::auth

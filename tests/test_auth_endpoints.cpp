@@ -298,6 +298,142 @@ static std::optional<std::pair<int, json>> post_json_auth(
     }
 }
 
+// 2. Login_NonexistentEmailIsTimingEqualized
+//
+// Verifies C-1: login with a nonexistent email takes >300 ms (Argon2id ran),
+// matching the latency of login with a real-but-wrong-passphrase.
+// Uses a coarse threshold — goal is "crypto ran", not "exactly equal".
+TEST_F(AuthEndpointsFixture, Login_NonexistentEmailIsTimingEqualized) {
+    if (sodium_init() < 0) {
+        GTEST_SKIP() << "sodium_init() failed";
+    }
+
+    CaInjectingClient client(kTestCA);
+    ASSERT_TRUE(wait_for_server(client))
+        << "Server did not start on " << base_url();
+
+    // --- Arm 1: nonexistent email ---
+    auto t0 = std::chrono::steady_clock::now();
+    auto resp_ne = post_json(client, base_url() + "/auth/login", {
+        {"email",      "nobody-does-not-exist@example.com"},
+        {"passphrase", "some-passphrase"},
+        {"totp_code",  123456}
+    });
+    auto t1 = std::chrono::steady_clock::now();
+    auto ms_ne = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+    ASSERT_TRUE(resp_ne.has_value());
+    EXPECT_EQ(resp_ne->first, 401);
+    EXPECT_EQ(resp_ne->second.value("error", ""), "auth_failed");
+
+    // Must have taken at least 300 ms (Argon2id work was performed).
+    EXPECT_GE(ms_ne, 300)
+        << "Login with nonexistent email returned in " << ms_ne
+        << " ms — expected >=300 ms (Argon2id must run on user-not-found path)";
+
+    // --- Arm 2: real email, wrong passphrase ---
+    // Enroll a user first so there is a real email in the DB.
+    const std::string real_email = "timing-test-user@example.com";
+    std::string enroll_token = mint_token(real_email);
+    ASSERT_EQ(enroll_token.size(), 64u) << "mint_token returned: '" << enroll_token << "'";
+
+    auto enroll_resp = post_json(client, base_url() + "/auth/enroll", {
+        {"token",      enroll_token},
+        {"email",      real_email},
+        {"passphrase", "correct-passphrase-for-timing-test"}
+    });
+    ASSERT_TRUE(enroll_resp.has_value());
+    ASSERT_EQ(enroll_resp->first, 200) << enroll_resp->second.dump();
+
+    auto t2 = std::chrono::steady_clock::now();
+    auto resp_wp = post_json(client, base_url() + "/auth/login", {
+        {"email",      real_email},
+        {"passphrase", "wrong-passphrase"},
+        {"totp_code",  999999}
+    });
+    auto t3 = std::chrono::steady_clock::now();
+    auto ms_wp = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
+
+    ASSERT_TRUE(resp_wp.has_value());
+    EXPECT_EQ(resp_wp->first, 401);
+    EXPECT_EQ(resp_wp->second.value("error", ""), "auth_failed");
+
+    EXPECT_GE(ms_wp, 300)
+        << "Login with wrong passphrase returned in " << ms_wp
+        << " ms — expected >=300 ms (Argon2id must run)";
+}
+
+// 3. Enroll_EmailMismatch_ReturnsSameErrorAsInvalidToken
+//
+// Verifies H-1 + H-2: enrolling with a valid token but the wrong email returns
+// the same 400 {"error":"invalid_enrollment_token"} as a garbage token, and
+// does NOT consume the token (original enrollment with the correct email still
+// works afterward).
+TEST_F(AuthEndpointsFixture, Enroll_EmailMismatch_ReturnsSameErrorAsInvalidToken) {
+    if (sodium_init() < 0) {
+        GTEST_SKIP() << "sodium_init() failed";
+    }
+
+    CaInjectingClient client(kTestCA);
+    ASSERT_TRUE(wait_for_server(client))
+        << "Server did not start on " << base_url();
+
+    const std::string correct_email = "a@example.com";
+    const std::string wrong_email   = "b@example.com";
+
+    // Mint a valid token for correct_email.
+    std::string valid_token = mint_token(correct_email);
+    ASSERT_EQ(valid_token.size(), 64u) << "mint_token returned: '" << valid_token << "'";
+
+    // --- Sub-case A: try enrolling with wrong email + valid token ---
+    // Should look identical to an invalid token response.
+    auto resp_mismatch = post_json(client, base_url() + "/auth/enroll", {
+        {"token",      valid_token},
+        {"email",      wrong_email},
+        {"passphrase", "some-passphrase"}
+    });
+    ASSERT_TRUE(resp_mismatch.has_value());
+    EXPECT_EQ(resp_mismatch->first, 400)
+        << "Email mismatch should return 400, got: " << resp_mismatch->second.dump();
+    EXPECT_EQ(resp_mismatch->second.value("error", ""), "invalid_enrollment_token")
+        << "Email mismatch error key should be 'invalid_enrollment_token', got: "
+        << resp_mismatch->second.dump();
+
+    // --- Sub-case B: same garbage-token response for reference ---
+    std::string garbage_token(64, '0'); // all zeros — cannot exist
+    auto resp_garbage = post_json(client, base_url() + "/auth/enroll", {
+        {"token",      garbage_token},
+        {"email",      correct_email},
+        {"passphrase", "some-passphrase"}
+    });
+    ASSERT_TRUE(resp_garbage.has_value());
+    EXPECT_EQ(resp_garbage->first, 400);
+    EXPECT_EQ(resp_garbage->second.value("error", ""), "invalid_enrollment_token");
+
+    // Both mismatch and garbage must return the same HTTP status + error key.
+    EXPECT_EQ(resp_mismatch->first, resp_garbage->first)
+        << "HTTP status must be identical";
+    EXPECT_EQ(resp_mismatch->second.value("error", ""),
+              resp_garbage->second.value("error", ""))
+        << "Error value must be identical";
+
+    // --- Sub-case C: verify the original token was NOT consumed ---
+    // Enrolling with the correct email + same token must still succeed.
+    auto resp_correct = post_json(client, base_url() + "/auth/enroll", {
+        {"token",      valid_token},
+        {"email",      correct_email},
+        {"passphrase", "correct-passphrase-after-mismatch-attempt"}
+    });
+    ASSERT_TRUE(resp_correct.has_value());
+    EXPECT_EQ(resp_correct->first, 200)
+        << "Enroll with correct email after a mismatch attempt should succeed; got: "
+        << resp_correct->second.dump();
+    EXPECT_TRUE(resp_correct->second.contains("user_id"))
+        << "Response missing user_id: " << resp_correct->second.dump();
+    EXPECT_TRUE(resp_correct->second.contains("totp_provisioning_uri"))
+        << "Response missing totp_provisioning_uri: " << resp_correct->second.dump();
+}
+
 // 1. FullAuthFlow
 TEST_F(AuthEndpointsFixture, FullAuthFlow) {
     if (sodium_init() < 0) {
