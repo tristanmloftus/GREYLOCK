@@ -3,7 +3,7 @@
 #include "db/Migrations.h"
 #include "auth/AuthHandlers.h"
 #include "auth/EnrollmentToken.h"
-#include "audit/StubAuditLog.h"
+#include "audit/SqlAuditLog.h"
 
 #include <sodium.h>
 #include <sqlite3.h>
@@ -225,8 +225,8 @@ int main(int argc, char* argv[]) {
     }
     Database& db = *db_ptr;
 
-    // Audit log (Phase 3 stub; Phase 4 replaces with chained writer).
-    tf::audit::StubAuditLog audit_log;
+    // Audit log: Phase 4 BLAKE2b-chained writer (replaces Phase 3 stub).
+    tf::audit::SqlAuditLog audit_log(db);
 
     Server server(cfg);
     server.register_routes();

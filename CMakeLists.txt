@@ -738,9 +738,16 @@ set(SERVER_AUDIT_SOURCES
   server/audit/StubAuditLog.cpp
 )
 
+set(SERVER_AUDIT_REAL_SOURCES
+  server/audit/CanonicalBytes.cpp
+  server/audit/Sanitizer.cpp
+  server/audit/SqlAuditLog.cpp
+)
+
 target_sources(TerminalFinanceServer PRIVATE
   ${SERVER_AUTH_SOURCES}
   ${SERVER_AUDIT_SOURCES}
+  ${SERVER_AUDIT_REAL_SOURCES}
 )
 
 target_link_libraries(TerminalFinanceServer PRIVATE
@@ -878,3 +885,113 @@ elseif(APPLE)
 endif()
 
 add_test(NAME AuthEndpointsTests COMMAND AuthEndpointsTests)
+
+# ==========================================================================
+# Phase 4.A additions — BLAKE2b-chained audit log writer + tests
+# ALL additions below this line were added by 4.A. Do not move above existing.
+# ==========================================================================
+
+# Shared audit real-implementation sources for test targets.
+set(AUDIT_IMPL_SOURCES
+  server/audit/CanonicalBytes.cpp
+  server/audit/Sanitizer.cpp
+  server/audit/SqlAuditLog.cpp
+)
+
+# --------------------------------------------------------------------------
+# AuditCanonicalBytesTests
+# Regression gate for AUDIT.md F-4 (no double-counting of tsUnixNanos).
+# Only depends on CanonicalBytes.cpp (no sqlite3 needed).
+# --------------------------------------------------------------------------
+add_executable(AuditCanonicalBytesTests
+  tests/test_audit_chain_canonical_bytes_no_double_count.cpp
+  server/audit/CanonicalBytes.cpp
+)
+
+if(MSVC)
+  target_compile_options(AuditCanonicalBytesTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuditCanonicalBytesTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(AuditCanonicalBytesTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} nlohmann_json::nlohmann_json
+)
+
+add_test(NAME AuditCanonicalBytesTests COMMAND AuditCanonicalBytesTests)
+
+# --------------------------------------------------------------------------
+# AuditReplayTests
+# Replay-verifier ships FIRST (verifier-before-writer discipline).
+# Uses hand-rolled chains via raw SQL; does not depend on SqlAuditLog.
+# --------------------------------------------------------------------------
+add_executable(AuditReplayTests
+  tests/test_audit_replay.cpp
+  server/audit/CanonicalBytes.cpp
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(AuditReplayTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuditReplayTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(AuditReplayTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} sqlite3 nlohmann_json::nlohmann_json
+)
+
+add_test(NAME AuditReplayTests COMMAND AuditReplayTests)
+
+# --------------------------------------------------------------------------
+# AuditSanitizerTests
+# Unit tests for the sanitizer (no DB, no sodium).
+# --------------------------------------------------------------------------
+add_executable(AuditSanitizerTests
+  tests/test_audit_sanitizer.cpp
+  server/audit/Sanitizer.cpp
+)
+
+if(MSVC)
+  target_compile_options(AuditSanitizerTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuditSanitizerTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(AuditSanitizerTests PRIVATE
+  gtest gtest_main nlohmann_json::nlohmann_json
+)
+
+add_test(NAME AuditSanitizerTests COMMAND AuditSanitizerTests)
+
+# --------------------------------------------------------------------------
+# AuditWriterTests
+# Integration test: records events via SqlAuditLog; runs verify_chain.
+# --------------------------------------------------------------------------
+add_executable(AuditWriterTests
+  tests/test_audit_writer.cpp
+  ${AUDIT_IMPL_SOURCES}
+  ${SERVER_DB_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(AuditWriterTests PRIVATE /MT)
+endif()
+
+target_include_directories(AuditWriterTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${sqlite_SOURCE_DIR}"
+)
+
+target_link_libraries(AuditWriterTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} sqlite3 nlohmann_json::nlohmann_json
+)
+
+add_test(NAME AuditWriterTests COMMAND AuditWriterTests)
