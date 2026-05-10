@@ -24,7 +24,7 @@
 //
 // DEK DERIVATION:
 //   A single shared DEK is derived for all Plaid tokens:
-//     crypto_kdf_derive_from_key(dek, 32, subkey_id=1, ctx="tf-plaid-", master_key)
+//     crypto_kdf_derive_from_key(dek, 32, subkey_id=1, ctx="tf-plaid", master_key)
 //   This is simpler than per-account DEKs and sufficient for the v0.2 threat
 //   model where the master key is the ultimate secret.  The AAD=account_id
 //   binding on the AEAD layer prevents ciphertext from being moved between
