@@ -341,7 +341,7 @@ enable_testing()
 # --------------------------------------------------------------------------
 # Main executable
 # --------------------------------------------------------------------------
-add_executable(TerminalFinance src/main.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
+add_executable(TerminalFinance src/main.cpp src/views/DashboardView.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
 
 target_link_libraries(TerminalFinance PRIVATE
     ftxui::screen
