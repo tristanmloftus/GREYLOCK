@@ -5,8 +5,6 @@
 #include <optional>
 #include <string>
 
-using namespace std::chrono_literals;
-
 // An HTTP request. Callers fill this in and pass to IHttpClient::send().
 // TLS verification is always ON in the implementation — there is no insecure flag.
 struct HttpRequest {
