@@ -48,11 +48,11 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        # -j 2 caps parallelism to 2 jobs. The self-hosted Debian VM has 2 vCPUs
-        # and ~2-4 GB RAM; FTXUI / cpp-httplib / gtest compile units can use
-        # 500MB-1GB each, so `-j` (auto = all cores) risks OOM on a 2GB VM.
-        # If RAM is later increased to 8GB+ we can revisit.
-        run: cmake --build build --config Release -j 2
+        # -j 1 (serial) to prevent OOM-killer from picking off the runner agent
+        # on the 3.8 GiB Debian VM. Two parallel TUs (FTXUI / cpp-httplib /
+        # gtest) can each spike ~1 GB and starve the runner. Trade-off: build
+        # is slow (~30-40 min cold). Revisit -j 2 once VM RAM is raised to 6+ GB.
+        run: cmake --build build --config Release -j 1
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
