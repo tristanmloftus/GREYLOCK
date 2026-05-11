@@ -6,6 +6,11 @@
 //   Plaid access tokens are NEVER held plaintext outside a single broker scope.
 //   The broker:
 //     1. Derives a per-account DEK from the master key via libsodium KDF.
+//        The master key is CONSUMED in the constructor: copied into
+//        master_key_, fed to derive_dek(), then immediately zeroed via
+//        sodium_memzero.  Only the derived DEK survives for the broker's
+//        lifetime — this minimizes the master-key exposure window against
+//        memory-disclosure attacks (core dumps, swap, ptrace).
 //     2. Uses EnvelopeEncryption (XChaCha20-Poly1305) with AAD=account_id_bytes
 //        so a token cannot be moved to another account (AAD-binding).
 //     3. Exposes withDecryptedToken<F>() so callers get a std::string_view over
@@ -236,7 +241,9 @@ private:
 
     Database& db_;
     tf::crypto::EnvelopeKey dek_;  // Derived from master key; zeroed in destructor.
-    std::array<std::byte, crypto_kdf_KEYBYTES> master_key_;  // Zeroed in destructor.
+    // Zeroed immediately after DEK derivation in constructor; destructor
+    // zeros again as belt-and-suspenders.  Never read after construction.
+    std::array<std::byte, crypto_kdf_KEYBYTES> master_key_;
 };
 
 } // namespace tf::plaid

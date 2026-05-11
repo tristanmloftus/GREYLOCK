@@ -68,7 +68,10 @@ PlaidTokenBroker::PlaidTokenBroker(
     }
     std::copy(master_key.begin(), master_key.end(), master_key_.begin());
     dek_ = derive_dek(master_key_);
-    // master_key_ is kept in case we need to re-derive; it is zeroed in the destructor.
+    // master_key_ is consumed: zero immediately so it does not linger in
+    // memory for the lifetime of the broker.  The DEK is the only key
+    // material needed for all subsequent encrypt/decrypt operations.
+    sodium_memzero(master_key_.data(), master_key_.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -131,10 +134,18 @@ PlaidTokenBroker::PlaidTokenBroker(Database& db)
     sodium_memzero(key_str.data(), key_str.size());
 
     dek_ = derive_dek(master_key_);
+    // master_key_ is consumed: zero immediately so it does not linger in
+    // memory for the lifetime of the broker.  The DEK is the only key
+    // material needed for all subsequent encrypt/decrypt operations.
+    sodium_memzero(master_key_.data(), master_key_.size());
 }
 
 // ---------------------------------------------------------------------------
-// Destructor — zero key material.
+// Destructor — zero key material (belt-and-suspenders).
+//
+// master_key_ is already zeroed in the constructor immediately after DEK
+// derivation; this second zero is harmless and ensures the field is clean
+// even if a future code path were to repopulate it.
 // ---------------------------------------------------------------------------
 PlaidTokenBroker::~PlaidTokenBroker() {
     sodium_memzero(master_key_.data(), master_key_.size());
