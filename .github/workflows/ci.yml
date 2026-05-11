@@ -81,14 +81,18 @@ jobs:
       # floor. Baseline (Phase 6 measurement) was 59%, so the gate has
       # headroom; if a future change drops below 50%, CI goes red.
       #
-      # gcovr is installed via pip (user-site) rather than apt so the
-      # workflow works on any Debian-family runner regardless of whether
-      # the maintainer pre-installed `gcovr` via apt. The pip path also
-      # gives us a recent gcovr (≥8.x) which handles GCC 13's gcov output
-      # cleanly.
+      # gcovr is pre-installed on the runner via `sudo apt install gcovr`
+      # (Debian 13 ships gcovr 7.2 which handles GCC 13's gcov output cleanly).
+      # We assert its presence rather than installing here: Debian 13's pip
+      # rejects system-wide / --user installs under PEP 668
+      # ("externally-managed-environment"), and the runner has no
+      # passwordless sudo for apt. Document the apt install in RUNBOOK.md;
+      # this step just verifies and prints the version for build logs.
       # ----------------------------------------------------------------
-      - name: Install gcovr
-        run: pip install --user gcovr
+      - name: Verify gcovr
+        run: |
+          which gcovr || { echo "::error::gcovr not installed on runner. Run: sudo apt install gcovr"; exit 1; }
+          gcovr --version | head -1
 
       - name: Coverage report
         run: |
