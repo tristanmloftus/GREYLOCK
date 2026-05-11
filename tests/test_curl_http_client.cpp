@@ -147,6 +147,54 @@ TEST(CurlHttpClientTest, NetworkResponseHeadersCaptured) {
         << "Expected at least one response header";
 }
 
+// --------------------------------------------------------------------------
+// CRLF-injection guard (Phase 0.B deferred).
+//
+// A caller-supplied header containing "\r\n" is HTTP header injection
+// (smuggling).  send() must reject it before any network I/O.  We use the
+// guaranteed-unreachable test-net URL so we know nothing went over the
+// wire: if validation fired, send() returns nullopt without ever building
+// a connection.
+// --------------------------------------------------------------------------
+TEST(CurlHttpClientTest, RejectsCRLFInHeaderValue) {
+    CurlHttpClient client;
+    HttpRequest req;
+    req.method  = "GET";
+    req.url     = "https://192.0.2.1/";          // TEST-NET-1
+    req.timeout = std::chrono::milliseconds{3'000};
+    req.headers["X-Evil"] = "value\r\nX-Injected: malicious";
+
+    auto result = client.send(req);
+    EXPECT_FALSE(result.has_value())
+        << "send() must reject a header value containing CRLF";
+}
+
+TEST(CurlHttpClientTest, RejectsCRLFInHeaderName) {
+    CurlHttpClient client;
+    HttpRequest req;
+    req.method  = "GET";
+    req.url     = "https://192.0.2.1/";
+    req.timeout = std::chrono::milliseconds{3'000};
+    req.headers["X-Evil\r\nX-Injected"] = "value";
+
+    auto result = client.send(req);
+    EXPECT_FALSE(result.has_value())
+        << "send() must reject a header name containing CRLF";
+}
+
+TEST(CurlHttpClientTest, RejectsLoneNewlineInHeader) {
+    CurlHttpClient client;
+    HttpRequest req;
+    req.method  = "GET";
+    req.url     = "https://192.0.2.1/";
+    req.timeout = std::chrono::milliseconds{3'000};
+    req.headers["X-Evil"] = "v\nX-Injected: x";
+
+    auto result = client.send(req);
+    EXPECT_FALSE(result.has_value())
+        << "send() must reject a bare '\\n' in a header value too";
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -4,6 +4,7 @@
 #include <curl/curl.h>
 #include <algorithm>
 #include <stdexcept>
+#include <string_view>
 
 // --------------------------------------------------------------------------
 // Global libcurl initializer
@@ -34,6 +35,19 @@ struct CurlGlobal {
 // Defined in an anonymous namespace so the destructor runs at static-object
 // teardown, after all CurlHttpClient instances have been destroyed.
 static CurlGlobal g_curl_global;
+
+// --------------------------------------------------------------------------
+// CRLF guard for request headers.
+//
+// HTTP header injection (CRLF smuggling) lets an attacker terminate the
+// current header and inject arbitrary headers — or split the request — by
+// passing "\r\n" inside a caller-supplied header name or value.  We reject
+// any such header outright instead of trying to sanitize.
+// --------------------------------------------------------------------------
+static bool contains_crlf(std::string_view s) {
+    return s.find('\r') != std::string_view::npos
+        || s.find('\n') != std::string_view::npos;
+}
 
 // --------------------------------------------------------------------------
 // Write callback — appends received data to a std::string*.
@@ -163,8 +177,21 @@ std::optional<HttpResponse> CurlHttpClient::send(const HttpRequest& req) {
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &resp.headers);
 
     // -- Request headers --
+    //
+    // Reject CRLF in header NAME or VALUE — this is HTTP-header-injection
+    // (smuggling).  The header name is logged for diagnostics; the value is
+    // NEVER logged because it may carry a secret (Authorization bearer token,
+    // session cookie, etc.).
     curl_slist* header_list = nullptr;
     for (const auto& [name, value] : req.headers) {
+        if (contains_crlf(name) || contains_crlf(value)) {
+            Logger::instance().error(
+                std::string("CurlHttpClient: rejecting CRLF in header: ") + name);
+            if (header_list) {
+                curl_slist_free_all(header_list);
+            }
+            return std::nullopt;
+        }
         std::string header_line = name + ": " + value;
         header_list = curl_slist_append(header_list, header_line.c_str());
     }
