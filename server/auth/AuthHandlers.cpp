@@ -12,6 +12,7 @@
 #include "httplib.h"
 
 #include "AuthHandlers.h"
+#include "AuthRateLimitInternal.h"
 #include "EnrollmentToken.h"
 #include "PassphraseHash.h"
 #include "Session.h"
@@ -27,6 +28,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -90,24 +92,64 @@ static std::string generate_id() {
 // F-5: keyed on ("auth_login", email) — never on XFF or IP.
 // Limit: 5 attempts per 15-minute window.
 // In-process map; resets on server restart (acceptable for v0.2).
+//
+// DoS hardening (Phase 4.D deferred): the map is bounded by kMaxRateBuckets.
+// If saturated, opportunistically sweep expired entries; if still full,
+// fail closed (return rate-limited) so the saturation itself becomes a
+// signal rather than an OOM vector.
+//
+// Implementation lives in the tf::auth::internal namespace (declared in
+// AuthRateLimitInternal.h) so the unit test can reach it without spinning
+// up an HTTP server.  Handlers below call the inline file-scope wrapper.
 // ---------------------------------------------------------------------------
+
+namespace {
 
 struct RateBucket {
     int     count{0};
     int64_t window_start_unix{0};
 };
 
-static constexpr int     kRateLimitMax        = 5;
-static constexpr int64_t kRateLimitWindowSecs = 15 * 60; // 15 minutes
+std::mutex g_rate_mutex;
+std::unordered_map<std::string, RateBucket> g_rate_buckets;
 
-static std::mutex g_rate_mutex;
-static std::unordered_map<std::string, RateBucket> g_rate_buckets;
+} // anonymous namespace
+
+}  // close namespace tf::auth (re-opened below)
+
+namespace tf::auth::internal {
 
 // Returns true if this request should be rate-limited (bucket tripped).
 // If not limited, increments the counter.
 // If the window has expired, resets the bucket first.
-static bool rate_limit_check(const std::string& bucket_key, int64_t t_unix) {
+//
+// Bounded-growth contract: if g_rate_buckets is at kMaxRateBuckets and the
+// requested bucket is new, first sweep expired entries; if the map is still
+// at the cap after the sweep, return true (deny) WITHOUT inserting and emit
+// a saturation warning to stderr.
+bool rate_limit_check(const std::string& bucket_key, int64_t t_unix) {
     std::lock_guard<std::mutex> lock(g_rate_mutex);
+
+    // If the key is not already present and the map is at the cap, try to
+    // make room by evicting expired buckets before inserting.
+    if (g_rate_buckets.find(bucket_key) == g_rate_buckets.end() &&
+        g_rate_buckets.size() >= kMaxRateBuckets) {
+        for (auto it = g_rate_buckets.begin(); it != g_rate_buckets.end(); ) {
+            if (t_unix - it->second.window_start_unix >= kRateLimitWindowSecs) {
+                it = g_rate_buckets.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (g_rate_buckets.size() >= kMaxRateBuckets) {
+            // Fail closed: refuse to allocate a new bucket.  Saturation is
+            // itself a signal worth surfacing — log once per denial.
+            std::cerr << "AuthHandlers: rate-limit map saturated, denying "
+                      << bucket_key << std::endl;
+            return true;
+        }
+    }
+
     auto& bucket = g_rate_buckets[bucket_key];
 
     if (t_unix - bucket.window_start_unix >= kRateLimitWindowSecs) {
@@ -122,6 +164,26 @@ static bool rate_limit_check(const std::string& bucket_key, int64_t t_unix) {
 
     ++bucket.count;
     return false;
+}
+
+void rate_limit_reset_for_tests() {
+    std::lock_guard<std::mutex> lock(g_rate_mutex);
+    g_rate_buckets.clear();
+}
+
+std::size_t rate_limit_bucket_count_for_tests() {
+    std::lock_guard<std::mutex> lock(g_rate_mutex);
+    return g_rate_buckets.size();
+}
+
+} // namespace tf::auth::internal
+
+namespace tf::auth {
+
+// Translation-unit-local alias keeps the existing handler call sites
+// (rate_limit_check(bucket_key, t)) unchanged.
+static inline bool rate_limit_check(const std::string& bucket_key, int64_t t_unix) {
+    return ::tf::auth::internal::rate_limit_check(bucket_key, t_unix);
 }
 
 // ---------------------------------------------------------------------------

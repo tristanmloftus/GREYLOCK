@@ -957,6 +957,45 @@ target_link_libraries(AuthSessionTests PRIVATE
 add_test(NAME AuthSessionTests COMMAND AuthSessionTests)
 
 # --------------------------------------------------------------------------
+# AuthRateLimitTests — unit tests for the in-process rate-limit map
+# (bounded growth + window expiry).  Pulls in AuthHandlers.cpp via its
+# internal namespace surface so no HTTP plumbing is needed.
+# --------------------------------------------------------------------------
+add_executable(AuthRateLimitTests
+  tests/test_auth_rate_limit.cpp
+  server/auth/AuthHandlers.cpp
+  server/auth/EnrollmentToken.cpp
+  server/auth/PassphraseHash.cpp
+  server/auth/Session.cpp
+  server/auth/Totp.cpp
+  ${SERVER_DB_SOURCES}
+  ${SERVER_AUDIT_REAL_SOURCES}
+)
+
+if(MSVC)
+  target_compile_options(AuthRateLimitTests PRIVATE /MT)
+endif()
+
+# AuthHandlers.cpp includes httplib.h; httplib.h requires
+# CPPHTTPLIB_OPENSSL_SUPPORT when the project links against OpenSSL.
+target_compile_definitions(AuthRateLimitTests PRIVATE
+  CPPHTTPLIB_OPENSSL_SUPPORT=1
+)
+
+target_include_directories(AuthRateLimitTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+  "${cpp-httplib_SOURCE_DIR}"
+)
+
+target_link_libraries(AuthRateLimitTests PRIVATE
+  gtest gtest_main ${_SODIUM_TARGET} SQLCipher::sqlcipher
+  nlohmann_json::nlohmann_json
+  OpenSSL::SSL OpenSSL::Crypto
+)
+
+add_test(NAME AuthRateLimitTests COMMAND AuthRateLimitTests)
+
+# --------------------------------------------------------------------------
 # AuthEndpointsTests — integration: launches TerminalFinanceServer.
 # --------------------------------------------------------------------------
 add_executable(AuthEndpointsTests
