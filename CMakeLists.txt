@@ -1615,3 +1615,29 @@ add_test(
   COMMAND WidgetSnapshotTests
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# --------------------------------------------------------------------------
+# ConsolidationServiceTests (Phase 5)
+# Locks in: cross-account transfer dedup behavior, same-account duplicate
+# dedup, idempotency (f(f(x)) == f(x)), hash-stability across runs.
+# --------------------------------------------------------------------------
+add_executable(ConsolidationServiceTests
+  tests/test_consolidation_service.cpp
+  src/services/ConsolidationService.cpp
+  src/services/PlaidService.cpp
+)
+if(MSVC)
+  target_compile_options(ConsolidationServiceTests PRIVATE /MT)
+endif()
+target_include_directories(ConsolidationServiceTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+target_link_libraries(ConsolidationServiceTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+)
+if(WIN32)
+  target_link_libraries(ConsolidationServiceTests PRIVATE crypt32 winhttp advapi32)
+endif()
+add_test(NAME ConsolidationServiceTests COMMAND ConsolidationServiceTests)
