@@ -93,11 +93,16 @@ std::variant<json, BackendError> BackendClient::map_response(const HttpResponse&
     if (status >= 200 && status < 300) {
         json parsed = json::parse(resp.body, nullptr, /*allow_exceptions=*/false);
         if (parsed.is_discarded()) {
+            // Body may contain a session token from /auth/login or another
+            // sensitive payload — never echo it.  Surface only the byte
+            // count so operators can still spot a "server returned junk"
+            // signature without leaking the bytes themselves.
             return BackendError{
                 BackendError::Kind::BadResponse,
                 status,
                 "invalid_json",
-                "2xx response body is not valid JSON: " + resp.body
+                "2xx response body is not valid JSON (" +
+                    std::to_string(resp.body.size()) + " bytes) [REDACTED]"
             };
         }
         return parsed;
