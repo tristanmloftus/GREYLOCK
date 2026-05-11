@@ -1590,3 +1590,28 @@ else()
 endif()
 
 add_test(NAME SupplierMapEndpointTests COMMAND SupplierMapEndpointTests)
+
+# --------------------------------------------------------------------------
+# WidgetSnapshotTests (Phase 5 TUI snapshot harness)
+# Renders each FTXUI widget from src/views/widgets/ at 80x24 and compares
+# to a checked-in fixture under tests/snapshot/fixtures/.  Set
+# TF_UPDATE_SNAPSHOTS=1 to capture/refresh fixtures.  Links against the
+# tf_widgets OBJECT library only — no DataStore / BackendClient deps.
+# --------------------------------------------------------------------------
+add_executable(WidgetSnapshotTests
+  tests/test_widgets_snapshot.cpp
+  $<TARGET_OBJECTS:tf_widgets>
+)
+target_link_libraries(WidgetSnapshotTests PRIVATE
+  gtest
+  gtest_main
+  ftxui::dom
+  ftxui::screen
+  ftxui::component
+)
+# Run with CWD = source dir so the default fixture path resolves.
+add_test(
+  NAME WidgetSnapshotTests
+  COMMAND WidgetSnapshotTests
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
