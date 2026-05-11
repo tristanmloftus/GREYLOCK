@@ -1483,3 +1483,88 @@ else()
 endif()
 
 add_test(NAME V01MigratorTests COMMAND V01MigratorTests)
+
+# ==========================================================================
+# Phase 5 additions — DiscoveryService JSON loader + /supplier-map endpoint
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# DiscoveryMerchantVelocityTests
+# Unit tests for DiscoveryService against realistic merchant strings
+# (StarbucksUS123, AMZN MKTPLACE * SUBSCRIBE, COSTCO WHSE #0123, USPS PO 12345
+# etc.) plus deterministic MoM velocity assertions.
+# --------------------------------------------------------------------------
+add_executable(DiscoveryMerchantVelocityTests
+  tests/test_discovery_merchant_velocity.cpp
+  src/services/DiscoveryService.cpp
+)
+
+if(MSVC)
+  target_compile_options(DiscoveryMerchantVelocityTests PRIVATE /MT)
+endif()
+
+target_include_directories(DiscoveryMerchantVelocityTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+# TF_SUPPLIER_MAP_FIXTURE points to the canonical JSON committed at
+# data/supplier_map.json so the test can load it from any CWD ctest picks.
+target_compile_definitions(DiscoveryMerchantVelocityTests PRIVATE
+  TF_SUPPLIER_MAP_FIXTURE="${CMAKE_SOURCE_DIR}/data/supplier_map.json"
+)
+
+target_link_libraries(DiscoveryMerchantVelocityTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+)
+
+add_test(NAME DiscoveryMerchantVelocityTests COMMAND DiscoveryMerchantVelocityTests)
+
+# --------------------------------------------------------------------------
+# SupplierMapEndpointTests
+# Integration test for GET /supplier-map. Boots TerminalFinanceServer on
+# port 19846 (distinct from data-endpoint tests' 19845), enrolls a user,
+# logs in, and exercises the auth/unauth/malformed paths.
+# --------------------------------------------------------------------------
+add_executable(SupplierMapEndpointTests
+  tests/test_supplier_map_endpoint.cpp
+  src/services/http/CurlHttpClient.cpp
+)
+
+add_dependencies(SupplierMapEndpointTests TerminalFinanceServer)
+
+if(MSVC)
+  target_compile_options(SupplierMapEndpointTests PRIVATE /MT)
+endif()
+
+target_compile_definitions(SupplierMapEndpointTests PRIVATE
+  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+  TF_SUPPLIER_MAP_FIXTURE="${CMAKE_SOURCE_DIR}/data/supplier_map.json"
+)
+
+target_include_directories(SupplierMapEndpointTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(SupplierMapEndpointTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+
+if(WIN32)
+  target_link_libraries(SupplierMapEndpointTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(SupplierMapEndpointTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+else()
+  target_link_libraries(SupplierMapEndpointTests PRIVATE CURL::libcurl)
+endif()
+
+add_test(NAME SupplierMapEndpointTests COMMAND SupplierMapEndpointTests)
