@@ -137,6 +137,21 @@ std::optional<HttpResponse> CurlHttpClient::send(const HttpRequest& req) {
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
 
+    // -- Protocol allowlist: HTTPS only, for both the initial request and any
+    //    redirect target.  Defense-in-depth: refuse http:// even if a server
+    //    tries to redirect us to it.  F-2 / supply-chain hardening — we never
+    //    follow a 30x into plaintext HTTP.
+    //
+    //    CURLOPT_*_STR forms require libcurl 7.85+ (0x075500); older versions
+    //    use the bit-mask CURLOPT_PROTOCOLS / CURLOPT_REDIR_PROTOCOLS.
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR,       "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS,       CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+
     // -- Response body capture --
     std::string response_body;
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
