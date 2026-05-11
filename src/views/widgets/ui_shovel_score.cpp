@@ -1,8 +1,23 @@
 #include "ui_shovel_score.h"
-#include <sstream>
+
 #include <iomanip>
+#include <sstream>
 
 namespace ftxui {
+
+namespace {
+std::string format_amount(double val) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << val;
+    return oss.str();
+}
+
+std::string format_score(double val) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(0) << val;
+    return oss.str();
+}
+}  // namespace
 
 Component ShovelScore(double score, int supplier_count, double total_shovel_spend) {
     return Renderer([=] {
@@ -32,21 +47,13 @@ Element ShovelScoreRenderer(double score, int supplier_count, double total_shove
         score_color = Color::Yellow;
     } else {
         label = "WAITING TO DIG";
-        score_color = Color::Gray;
+        score_color = Color::GrayLight;
     }
 
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(0);
-    oss << "  " << score << "/100";
-
-    std::ostringstream oss2;
-    oss2 << std::fixed << std::setprecision(2);
-    oss2 << "  $" << total_shovel_spend << " to " << supplier_count << " shovel companies";
-
-    rows.push_back(text(oss.str()) | bold | color(score_color));
+    rows.push_back(text("  " + format_score(score) + "/100") | bold | color(score_color));
     rows.push_back(text(label) | color(score_color));
     rows.push_back(text(""));
-    rows.push_back(text("Total shovel spend: $" + std::to_string(total_shovel_spend)) | dim);
+    rows.push_back(text("Total shovel spend: $" + format_amount(total_shovel_spend)) | dim);
     rows.push_back(text("Shovel companies: " + std::to_string(supplier_count)) | dim);
 
     return vbox(std::move(rows)) | border;

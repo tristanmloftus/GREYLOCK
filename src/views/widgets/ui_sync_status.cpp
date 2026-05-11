@@ -2,13 +2,13 @@
 
 namespace ftxui {
 
-Component SyncStatusIndicator(const std::vector<SyncStatus>& statuses) {
+Component SyncStatusIndicator(const std::vector<tf::widgets::SyncStatus>& statuses) {
     return Renderer([statuses] {
         return SyncStatusIndicatorRenderer(statuses);
     });
 }
 
-Element SyncStatusIndicatorRenderer(const std::vector<SyncStatus>& statuses) {
+Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses) {
     std::vector<Element> rows;
 
     rows.push_back(text("Connection Status") | bold);
@@ -19,8 +19,8 @@ Element SyncStatusIndicatorRenderer(const std::vector<SyncStatus>& statuses) {
         rows.push_back(text("  Press [P] to link a bank.") | dim);
     } else {
         for (const auto& s : statuses) {
-            std::string status_icon = s.connected ? "[✓]" : "[✗]";
-            Color status_color = s.connected ? Color::Green : Color::Red;
+            const std::string status_icon = s.connected ? "[+]" : "[x]";
+            const Color status_color = s.connected ? Color::Green : Color::Red;
 
             std::string sync_time = s.last_sync.empty() ? "Never" : s.last_sync;
             if (s.connected && !s.last_sync.empty()) {
@@ -31,9 +31,9 @@ Element SyncStatusIndicatorRenderer(const std::vector<SyncStatus>& statuses) {
 
             Element row = hbox({
                 text(status_icon) | color(status_color),
-                text(" ") | hidden,
+                text(" "),
                 text(s.institution) | bold,
-                text("  ") | hidden,
+                text("  "),
                 text(sync_time) | dim
             });
             rows.push_back(row);

@@ -1,3 +1,10 @@
+// ui_net_worth — promoted from proposals/ in Phase 5.
+//
+// Pure render function: takes primitive doubles (per-account-type balances
+// and a net-worth total) and returns an FTXUI Element/Component.  No I/O,
+// no DataStore access — the caller (DashboardView) is responsible for
+// aggregating data.
+
 #pragma once
 
 #include <ftxui/dom/elements.hpp>

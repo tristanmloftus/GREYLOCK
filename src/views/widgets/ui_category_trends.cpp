@@ -1,16 +1,32 @@
 #include "ui_category_trends.h"
-#include <sstream>
+
+#include <cmath>
 #include <iomanip>
+#include <sstream>
 
 namespace ftxui {
 
-Component CategorySpendingTrends(const std::vector<CategoryTrend>& trends, size_t max_items) {
-    return Renderer([=] {
+namespace {
+std::string format_amount(double val) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << val;
+    return oss.str();
+}
+
+std::string format_pct(double val) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1) << val;
+    return oss.str();
+}
+}  // namespace
+
+Component CategorySpendingTrends(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items) {
+    return Renderer([trends, max_items] {
         return CategorySpendingTrendsRenderer(trends, max_items);
     });
 }
 
-Element CategorySpendingTrendsRenderer(const std::vector<CategoryTrend>& trends, size_t max_items) {
+Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items) {
     std::vector<Element> rows;
 
     rows.push_back(text("Top Spending Categories") | bold);
@@ -23,29 +39,23 @@ Element CategorySpendingTrendsRenderer(const std::vector<CategoryTrend>& trends,
         for (const auto& t : trends) {
             if (count >= max_items) break;
 
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(2);
-
             std::string direction;
             Color change_color = Color::White;
             if (t.percent_change > 0) {
-                direction = "▲";
+                direction = "^";
                 change_color = Color::Red;
             } else if (t.percent_change < 0) {
-                direction = "▼";
+                direction = "v";
                 change_color = Color::Green;
             } else {
-                direction = "─";
+                direction = "-";
             }
-
-            oss.str("");
-            oss << t.emoji << "  " << t.category_name << "  $" << t.current_spend << "  " << direction << " " << std::abs(t.percent_change) << "%";
 
             Element row = hbox({
                 text(t.emoji) | dim,
                 text("  " + t.category_name) | dim,
-                text("  $" + std::to_string(t.current_spend)) | bold,
-                text("  " + direction + " " + std::to_string(std::abs(t.percent_change)) + "%") | color(change_color)
+                text("  $" + format_amount(t.current_spend)) | bold,
+                text("  " + direction + " " + format_pct(std::abs(t.percent_change)) + "%") | color(change_color)
             });
             rows.push_back(row);
             count++;

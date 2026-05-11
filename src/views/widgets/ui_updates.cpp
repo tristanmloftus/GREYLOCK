@@ -16,13 +16,13 @@ Element SupplierTickerDisplayRenderer(
     rows.push_back(text("Discovered Suppliers (MoM Analysis)") | bold);
     rows.push_back(separator());
 
-    for (const auto& [ticker, description] : suppliers) {
-        std::string row = "  " + ticker + "  |  " + description;
-        rows.push_back(text(row));
-    }
-
     if (suppliers.empty()) {
         rows.push_back(text("  No suppliers discovered yet.") | dim);
+    } else {
+        for (const auto& [ticker, description] : suppliers) {
+            const std::string row = "  " + ticker + "  |  " + description;
+            rows.push_back(text(row));
+        }
     }
 
     return vbox(std::move(rows)) | border;

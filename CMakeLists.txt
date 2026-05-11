@@ -314,12 +314,34 @@ set(CRYPTO_SOURCES
 # Its v0.1 content has been moved into DpapiSecretStore.cpp / KeychainSecretStore.cpp.
 # The file still exists in the tree as a documented stub.
 
+# --------------------------------------------------------------------------
+# tf_widgets — promoted FTXUI widgets (Phase 5).
+#
+# Pure rendering helpers that take primitive parameters and return an
+# ftxui::Element / Component.  Compiled as an OBJECT library so:
+#   1. TerminalFinance links the object files directly (no archive overhead).
+#   2. WidgetSnapshotTests can link the same object files without pulling in
+#      main.cpp or any DataStore/BackendClient state.
+# --------------------------------------------------------------------------
+set(WIDGET_SOURCES
+  src/views/widgets/ui_net_worth.cpp
+  src/views/widgets/ui_category_trends.cpp
+  src/views/widgets/ui_shovel_intelligence.cpp
+  src/views/widgets/ui_shovel_score.cpp
+  src/views/widgets/ui_sync_status.cpp
+  src/views/widgets/ui_updates.cpp
+  src/views/widgets/consolidation_ui.cpp
+)
+add_library(tf_widgets OBJECT ${WIDGET_SOURCES})
+target_link_libraries(tf_widgets PUBLIC ftxui::dom ftxui::screen ftxui::component)
+target_include_directories(tf_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 enable_testing()
 
 # --------------------------------------------------------------------------
 # Main executable
 # --------------------------------------------------------------------------
-add_executable(TerminalFinance src/main.cpp ${COMMON_SOURCES})
+add_executable(TerminalFinance src/main.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
 
 target_link_libraries(TerminalFinance PRIVATE
     ftxui::screen
