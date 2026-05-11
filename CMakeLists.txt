@@ -340,6 +340,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(TerminalFinance PRIVATE CURL::libcurl)
 endif()
 
 # --------------------------------------------------------------------------
@@ -366,6 +369,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(DataStoreTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME DataStoreTests COMMAND DataStoreTests)
@@ -396,6 +402,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(CurlHttpClientTests PRIVATE CURL::libcurl)
 endif()
 
 # Run the non-network tests by default. The network tests skip themselves
@@ -538,6 +547,9 @@ target_link_libraries(ServerHealthzTests PRIVATE
 if(WIN32)
   target_link_libraries(ServerHealthzTests PRIVATE CURL::libcurl)
 elseif(APPLE)
+  target_link_libraries(ServerHealthzTests PRIVATE CURL::libcurl)
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
   target_link_libraries(ServerHealthzTests PRIVATE CURL::libcurl)
 endif()
 
@@ -779,6 +791,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(BackendClientTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME BackendClientTests COMMAND BackendClientTests)
@@ -813,6 +828,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(AuthServiceTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME AuthServiceTests COMMAND AuthServiceTests)
@@ -973,6 +991,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(AuthEndpointsTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME AuthEndpointsTests COMMAND AuthEndpointsTests)
@@ -1185,6 +1206,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(DataEndpointsTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME DataEndpointsTests COMMAND DataEndpointsTests)
@@ -1215,6 +1239,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(RemoteBackendStorageServiceTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME RemoteBackendStorageServiceTests COMMAND RemoteBackendStorageServiceTests)
@@ -1352,6 +1379,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(PlaidSyncSchedulerTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME PlaidSyncSchedulerTests COMMAND PlaidSyncSchedulerTests)
@@ -1400,6 +1430,9 @@ elseif(APPLE)
     "-framework CoreFoundation"
     CURL::libcurl
   )
+else()
+  # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
+  target_link_libraries(V01MigratorTests PRIVATE CURL::libcurl)
 endif()
 
 add_test(NAME V01MigratorTests COMMAND V01MigratorTests)
