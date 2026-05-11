@@ -66,3 +66,54 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build/CMakeFiles/CMakeOutput.log
           if-no-files-found: ignore
+
+      # ----------------------------------------------------------------
+      # Phase 6: coverage gate.
+      #
+      # Builds the project a second time in a separate directory
+      # (build-cov/) with TF_COVERAGE=ON so the Release artefacts above
+      # remain shippable (TF_COVERAGE forces -O0 -g). Coverage instruments
+      # only first-party targets (src/, server/, tests/); FetchContent
+      # deps (_deps/**) are excluded from both compile flags and gcovr
+      # filters to keep the % honest.
+      #
+      # `--fail-under-line 50` enforces the project-wide line-coverage
+      # floor. Baseline (Phase 6 measurement) was 59%, so the gate has
+      # headroom; if a future change drops below 50%, CI goes red.
+      #
+      # gcovr is installed via pip (user-site) rather than apt so the
+      # workflow works on any Debian-family runner regardless of whether
+      # the maintainer pre-installed `gcovr` via apt. The pip path also
+      # gives us a recent gcovr (≥8.x) which handles GCC 13's gcov output
+      # cleanly.
+      # ----------------------------------------------------------------
+      - name: Install gcovr
+        run: pip install --user gcovr
+
+      - name: Coverage report
+        run: |
+          cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DTF_COVERAGE=ON
+          cmake --build build-cov -j 1
+          cd build-cov && ctest --output-on-failure
+          cd ..
+          gcovr -r . --filter 'src/' --filter 'server/' \
+            --exclude '_deps' --exclude 'tests/' \
+            --txt --xml coverage.xml --html-details coverage.html \
+            --fail-under-line 50
+          echo "## Coverage summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          gcovr -r . --filter 'src/' --filter 'server/' \
+            --exclude '_deps' --exclude 'tests/' --txt \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage.html
+            coverage*.html
+          if-no-files-found: warn
