@@ -9,6 +9,7 @@
 #include "data/TransactionsHandler.h"
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
+#include "discovery/SupplierMapHandler.h"
 #include "plaid/PlaidTokenBroker.h"
 #include "plaid/PlaidApiClient.h"
 #include "plaid/PlaidSyncScheduler.h"
@@ -425,6 +426,16 @@ int main(int argc, char* argv[]) {
     tf::data::register_transactions_handlers(server.raw_server(), db, audit_log);
     tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
     tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
+
+    // Phase 5: GET /supplier-map — session-gated canonical supplier rules.
+    // Reads data/supplier_map.json relative to CWD; TF_SUPPLIER_MAP_PATH
+    // overrides for tests + alternate deployments.
+    {
+        std::string supplier_path = env_or("TF_SUPPLIER_MAP_PATH",
+                                           "data/supplier_map.json");
+        tf::discovery::register_supplier_map_handler(
+            server.raw_server(), db, supplier_path);
+    }
 
     // Start Plaid sync scheduler after all routes are registered.
     if (plaid_scheduler_ptr) {

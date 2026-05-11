@@ -1203,6 +1203,14 @@ set(SERVER_DATA_SOURCES
 
 target_sources(TerminalFinanceServer PRIVATE ${SERVER_DATA_SOURCES})
 
+# Phase 5: GET /supplier-map endpoint (session-gated).
+# Lives in its own source group to keep the data/ handler set focused on
+# CRUD endpoints.  Reuses SessionMiddleware (already in SERVER_DATA_SOURCES).
+set(SERVER_DISCOVERY_SOURCES
+  server/discovery/SupplierMapHandler.cpp
+)
+target_sources(TerminalFinanceServer PRIVATE ${SERVER_DISCOVERY_SOURCES})
+
 # --------------------------------------------------------------------------
 # TUI-side: RemoteBackendStorageService (IStorageService backed by server API).
 # save() is a documented stub returning false (write-through deferred to Phase 5).
