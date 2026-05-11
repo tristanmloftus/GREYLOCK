@@ -42,6 +42,101 @@ if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY_REL "MultiThreaded")
 endif()
 
+# --------------------------------------------------------------------------
+# Phase 6: TF_COVERAGE — opt-in code coverage for first-party targets only.
+#
+# When ON:
+#   - GCC (Linux CI):       adds --coverage to compile + link flags.
+#   - AppleClang (macOS):   adds -fprofile-instr-generate -fcoverage-mapping.
+#                           Reporting on macOS is deferred (Phase 6 focuses
+#                           on GCC + gcovr on Linux CI).
+#   - MSVC:                 not supported in Phase 6.
+#
+# Optimization is forced to -O0 -g so gcov line numbers and branch arcs are
+# reliable. This also turns the Release config into an effective Debug build,
+# which is intentional — coverage runs are not for shipping artifacts.
+#
+# Only first-party targets (TerminalFinance, TerminalFinanceServer, tf_widgets,
+# and every *Tests executable) are instrumented. FetchContent dependencies
+# (FTXUI, gtest, cpp-httplib, nlohmann/json) are deliberately NOT instrumented
+# so their coverage numbers don't pollute the project gate.
+#
+# Targets are tagged via `set_property(TARGET ... PROPERTY TF_FIRST_PARTY TRUE)`
+# immediately after creation, and `tf_enable_coverage()` is iterated over the
+# tagged set at the end of this file. This keeps the per-target edits to a
+# single line and concentrates the instrumentation logic in one place.
+#
+# Local invocation:
+#   cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DTF_COVERAGE=ON
+#   cmake --build build-cov
+#   ctest --test-dir build-cov --output-on-failure
+#   gcovr -r . --filter 'src/' --filter 'server/' \
+#         --exclude '_deps' --exclude 'tests/' --txt
+# --------------------------------------------------------------------------
+option(TF_COVERAGE "Enable code coverage instrumentation for first-party targets" OFF)
+
+set(TF_COVERAGE_COMPILE_FLAGS "")
+set(TF_COVERAGE_LINK_FLAGS "")
+
+if(TF_COVERAGE)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(TF_COVERAGE_COMPILE_FLAGS --coverage)
+    set(TF_COVERAGE_LINK_FLAGS --coverage)
+    message(STATUS "TF_COVERAGE: GCC --coverage enabled for first-party targets")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
+      OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # AppleClang/LLVM path documented for completeness; not gated in CI yet.
+    # gcovr does not consume LLVM .profraw natively — reporting on macOS
+    # requires `llvm-profdata merge` + `llvm-cov export -format=lcov`, then
+    # an external converter to Cobertura. Defer to a follow-up phase.
+    # For local one-off measurement against gcovr, swap these flags for
+    # `--coverage` (which AppleClang also supports, producing GCC-compatible
+    # .gcno/.gcda) and invoke gcovr with
+    # `--gcov-executable 'xcrun llvm-cov gcov' --merge-mode-functions=separate`.
+    set(TF_COVERAGE_COMPILE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+    set(TF_COVERAGE_LINK_FLAGS -fprofile-instr-generate)
+    message(STATUS "TF_COVERAGE: AppleClang/LLVM source-based coverage enabled "
+                   "(reporting via llvm-cov is out-of-scope for Phase 6 CI)")
+  else()
+    message(WARNING "TF_COVERAGE: compiler '${CMAKE_CXX_COMPILER_ID}' not supported; "
+                    "coverage instrumentation will be skipped.")
+  endif()
+
+  # Force -O0 -g for the active config so gcov sees real line/branch arcs.
+  # We only override Release because that's what the CI build uses; Debug
+  # already implies -O0 -g on GCC/Clang.
+  set(CMAKE_CXX_FLAGS_RELEASE "-O0 -g" CACHE STRING
+      "Coverage build: -O0 -g for reliable gcov line numbers" FORCE)
+  set(CMAKE_C_FLAGS_RELEASE "-O0 -g" CACHE STRING
+      "Coverage build: -O0 -g for reliable gcov line numbers" FORCE)
+endif()
+
+# tf_enable_coverage(<target>): apply coverage flags to <target> iff
+# TF_COVERAGE is ON. Safe to call on any target — the no-op fast path
+# avoids passing empty flag lists to target_compile_options.
+function(tf_enable_coverage target)
+  if(NOT TF_COVERAGE)
+    return()
+  endif()
+  if(TF_COVERAGE_COMPILE_FLAGS)
+    target_compile_options(${target} PRIVATE ${TF_COVERAGE_COMPILE_FLAGS})
+  endif()
+  if(TF_COVERAGE_LINK_FLAGS)
+    target_link_options(${target} PRIVATE ${TF_COVERAGE_LINK_FLAGS})
+  endif()
+endfunction()
+
+# Internal: track first-party targets so tf_enable_coverage can be applied
+# to all of them in one sweep at the bottom of the file. tf_register_first_party
+# stores names in a CACHE variable so it survives across function scopes.
+set(TF_FIRST_PARTY_TARGETS "" CACHE INTERNAL "First-party targets eligible for coverage" FORCE)
+function(tf_register_first_party target)
+  set(_updated "${TF_FIRST_PARTY_TARGETS}")
+  list(APPEND _updated "${target}")
+  set(TF_FIRST_PARTY_TARGETS "${_updated}" CACHE INTERNAL
+      "First-party targets eligible for coverage" FORCE)
+endfunction()
+
 # Windows: suppress the legacy <windows.h> min/max macros project-wide so
 # std::min / std::max don't collide. <curl/curl.h> transitively pulls in
 # <windows.h> on Windows, so any TU that uses both std::max and curl will
@@ -335,6 +430,7 @@ set(WIDGET_SOURCES
 add_library(tf_widgets OBJECT ${WIDGET_SOURCES})
 target_link_libraries(tf_widgets PUBLIC ftxui::dom ftxui::screen ftxui::component)
 target_include_directories(tf_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tf_register_first_party(tf_widgets)
 
 enable_testing()
 
@@ -342,6 +438,7 @@ enable_testing()
 # Main executable
 # --------------------------------------------------------------------------
 add_executable(TerminalFinance src/main.cpp src/views/DashboardView.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
+tf_register_first_party(TerminalFinance)
 
 target_link_libraries(TerminalFinance PRIVATE
     ftxui::screen
@@ -371,6 +468,7 @@ endif()
 # DataStoreTests
 # --------------------------------------------------------------------------
 add_executable(DataStoreTests tests/test_datastore.cpp ${COMMON_SOURCES})
+tf_register_first_party(DataStoreTests)
 
 if(MSVC)
   target_compile_options(DataStoreTests PRIVATE /MT)
@@ -404,6 +502,7 @@ add_test(NAME DataStoreTests COMMAND DataStoreTests)
 # Network-touching tests are gated behind TF_NETWORK_TESTS=1.
 # --------------------------------------------------------------------------
 add_executable(CurlHttpClientTests tests/test_curl_http_client.cpp ${COMMON_SOURCES})
+tf_register_first_party(CurlHttpClientTests)
 
 if(MSVC)
   target_compile_options(CurlHttpClientTests PRIVATE /MT)
@@ -445,6 +544,7 @@ if(WIN32 OR APPLE)
       tests/test_secret_store.cpp
       ${SECRET_STORE_SOURCES}
   )
+  tf_register_first_party(SecretStoreTests)
 
   if(MSVC)
     target_compile_options(SecretStoreTests PRIVATE /MT)
@@ -478,6 +578,7 @@ add_executable(CryptoTests
     tests/test_crypto.cpp
     ${CRYPTO_SOURCES}
 )
+tf_register_first_party(CryptoTests)
 
 if(MSVC)
   target_compile_options(CryptoTests PRIVATE /MT)
@@ -509,6 +610,7 @@ set(SERVER_SOURCES
 # We set it as a target compile definition so it propagates transitively.
 # --------------------------------------------------------------------------
 add_executable(TerminalFinanceServer server/main.cpp ${SERVER_SOURCES})
+tf_register_first_party(TerminalFinanceServer)
 
 target_include_directories(TerminalFinanceServer PRIVATE
   "${CMAKE_SOURCE_DIR}"
@@ -542,6 +644,7 @@ add_executable(ServerHealthzTests
   ${SERVER_SOURCES}
   src/services/http/CurlHttpClient.cpp
 )
+tf_register_first_party(ServerHealthzTests)
 
 if(MSVC)
   target_compile_options(ServerHealthzTests PRIVATE /MT)
@@ -746,6 +849,7 @@ add_executable(MigrationsTests
   tests/test_migrations.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(MigrationsTests)
 
 if(MSVC)
   target_compile_options(MigrationsTests PRIVATE /MT)
@@ -784,6 +888,7 @@ add_executable(BackendClientTests
   ${COMMON_SOURCES}
   ${SECRET_STORE_SOURCES}
 )
+tf_register_first_party(BackendClientTests)
 
 # The integration test launches the TerminalFinanceServer binary; make sure
 # it's built first.
@@ -830,6 +935,7 @@ add_executable(AuthServiceTests
   ${COMMON_SOURCES}
   src/services/AuthService.cpp
 )
+tf_register_first_party(AuthServiceTests)
 
 if(MSVC)
   target_compile_options(AuthServiceTests PRIVATE /MT)
@@ -895,6 +1001,7 @@ add_executable(AuthPassphraseTests
   tests/test_auth_passphrase.cpp
   server/auth/PassphraseHash.cpp
 )
+tf_register_first_party(AuthPassphraseTests)
 
 if(MSVC)
   target_compile_options(AuthPassphraseTests PRIVATE /MT)
@@ -917,6 +1024,7 @@ add_executable(AuthTotpTests
   tests/test_auth_totp.cpp
   server/auth/Totp.cpp
 )
+tf_register_first_party(AuthTotpTests)
 
 if(MSVC)
   target_compile_options(AuthTotpTests PRIVATE /MT)
@@ -940,6 +1048,7 @@ add_executable(AuthEnrollmentTokenTests
   server/auth/EnrollmentToken.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(AuthEnrollmentTokenTests)
 
 if(MSVC)
   target_compile_options(AuthEnrollmentTokenTests PRIVATE /MT)
@@ -963,6 +1072,7 @@ add_executable(AuthSessionTests
   server/auth/Session.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(AuthSessionTests)
 
 if(MSVC)
   target_compile_options(AuthSessionTests PRIVATE /MT)
@@ -993,6 +1103,7 @@ add_executable(AuthRateLimitTests
   ${SERVER_DB_SOURCES}
   ${SERVER_AUDIT_REAL_SOURCES}
 )
+tf_register_first_party(AuthRateLimitTests)
 
 if(MSVC)
   target_compile_options(AuthRateLimitTests PRIVATE /MT)
@@ -1024,6 +1135,7 @@ add_executable(AuthEndpointsTests
   tests/test_auth_endpoints.cpp
   src/services/http/CurlHttpClient.cpp
 )
+tf_register_first_party(AuthEndpointsTests)
 
 add_dependencies(AuthEndpointsTests TerminalFinanceServer)
 
@@ -1080,6 +1192,7 @@ add_executable(AuditCanonicalBytesTests
   tests/test_audit_chain_canonical_bytes_no_double_count.cpp
   server/audit/CanonicalBytes.cpp
 )
+tf_register_first_party(AuditCanonicalBytesTests)
 
 if(MSVC)
   target_compile_options(AuditCanonicalBytesTests PRIVATE /MT)
@@ -1105,6 +1218,7 @@ add_executable(AuditReplayTests
   server/audit/CanonicalBytes.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(AuditReplayTests)
 
 if(MSVC)
   target_compile_options(AuditReplayTests PRIVATE /MT)
@@ -1128,6 +1242,7 @@ add_executable(AuditSanitizerTests
   tests/test_audit_sanitizer.cpp
   server/audit/Sanitizer.cpp
 )
+tf_register_first_party(AuditSanitizerTests)
 
 if(MSVC)
   target_compile_options(AuditSanitizerTests PRIVATE /MT)
@@ -1152,6 +1267,7 @@ add_executable(AuditWriterTests
   ${AUDIT_IMPL_SOURCES}
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(AuditWriterTests)
 
 if(MSVC)
   target_compile_options(AuditWriterTests PRIVATE /MT)
@@ -1186,6 +1302,7 @@ add_executable(SqlCipherTests
   tests/test_sqlcipher.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(SqlCipherTests)
 
 if(MSVC)
   target_compile_options(SqlCipherTests PRIVATE /MT)
@@ -1247,6 +1364,7 @@ add_executable(DataEndpointsTests
   tests/test_data_endpoints.cpp
   src/services/http/CurlHttpClient.cpp
 )
+tf_register_first_party(DataEndpointsTests)
 
 add_dependencies(DataEndpointsTests TerminalFinanceServer)
 
@@ -1291,6 +1409,7 @@ add_executable(RemoteBackendStorageServiceTests
   ${COMMON_SOURCES}
   src/services/RemoteBackendStorageService.cpp
 )
+tf_register_first_party(RemoteBackendStorageServiceTests)
 
 if(MSVC)
   target_compile_options(RemoteBackendStorageServiceTests PRIVATE /MT)
@@ -1342,6 +1461,7 @@ add_executable(PlaidTokenBrokerTests
   src/services/crypto/EnvelopeEncryption.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(PlaidTokenBrokerTests)
 
 if(MSVC)
   target_compile_options(PlaidTokenBrokerTests PRIVATE /MT)
@@ -1370,6 +1490,7 @@ add_executable(PlaidServiceRefactorTests
   src/services/PlaidService.cpp
   src/utils/Logger.h
 )
+tf_register_first_party(PlaidServiceRefactorTests)
 
 if(MSVC)
   target_compile_options(PlaidServiceRefactorTests PRIVATE /MT)
@@ -1423,6 +1544,7 @@ add_executable(PlaidSyncSchedulerTests
   src/services/http/CurlHttpClient.cpp
   ${SERVER_DB_SOURCES}
 )
+tf_register_first_party(PlaidSyncSchedulerTests)
 
 if(MSVC)
   target_compile_options(PlaidSyncSchedulerTests PRIVATE /MT)
@@ -1479,6 +1601,7 @@ add_executable(V01MigratorTests
   src/services/BackendClient.cpp
   src/services/http/CurlHttpClient.cpp
 )
+tf_register_first_party(V01MigratorTests)
 
 if(MSVC)
   target_compile_options(V01MigratorTests PRIVATE /MT)
@@ -1520,6 +1643,7 @@ add_executable(DiscoveryMerchantVelocityTests
   tests/test_discovery_merchant_velocity.cpp
   src/services/DiscoveryService.cpp
 )
+tf_register_first_party(DiscoveryMerchantVelocityTests)
 
 if(MSVC)
   target_compile_options(DiscoveryMerchantVelocityTests PRIVATE /MT)
@@ -1553,6 +1677,7 @@ add_executable(SupplierMapEndpointTests
   tests/test_supplier_map_endpoint.cpp
   src/services/http/CurlHttpClient.cpp
 )
+tf_register_first_party(SupplierMapEndpointTests)
 
 add_dependencies(SupplierMapEndpointTests TerminalFinanceServer)
 
@@ -1602,6 +1727,7 @@ add_executable(WidgetSnapshotTests
   tests/test_widgets_snapshot.cpp
   $<TARGET_OBJECTS:tf_widgets>
 )
+tf_register_first_party(WidgetSnapshotTests)
 target_link_libraries(WidgetSnapshotTests PRIVATE
   gtest
   gtest_main
@@ -1626,6 +1752,7 @@ add_executable(ConsolidationServiceTests
   src/services/ConsolidationService.cpp
   src/services/PlaidService.cpp
 )
+tf_register_first_party(ConsolidationServiceTests)
 if(MSVC)
   target_compile_options(ConsolidationServiceTests PRIVATE /MT)
 endif()
@@ -1641,3 +1768,69 @@ if(WIN32)
   target_link_libraries(ConsolidationServiceTests PRIVATE crypt32 winhttp advapi32)
 endif()
 add_test(NAME ConsolidationServiceTests COMMAND ConsolidationServiceTests)
+
+# ==========================================================================
+# Phase 6: TF_COVERAGE — apply coverage flags + `coverage` custom target.
+#
+# This block is intentionally placed at the END of CMakeLists.txt so every
+# first-party target has been registered via tf_register_first_party() by
+# the time we sweep. Adding a new test/executable in the future requires
+# exactly one call to tf_register_first_party(<target>) at the site of
+# add_executable() — no edits down here are necessary.
+# ==========================================================================
+if(TF_COVERAGE)
+  foreach(_tf_target IN LISTS TF_FIRST_PARTY_TARGETS)
+    if(TARGET ${_tf_target})
+      tf_enable_coverage(${_tf_target})
+    endif()
+  endforeach()
+
+  # `coverage` custom target:
+  #   1. ctest --output-on-failure   → exercises all instrumented binaries
+  #      so .gcda counters land next to the .gcno notes.
+  #   2. gcovr                        → produces three artifacts:
+  #        - coverage.txt          (stdout-style summary; CI step summary)
+  #        - coverage.xml          (Cobertura; for upload / external trend
+  #                                  dashboards)
+  #        - coverage.html / .css   (single-file HTML report; --html-details
+  #                                  also writes coverage.<source>.html)
+  #
+  # gcovr filters mirror the CI invocation: only src/ and server/ are
+  # measured, and _deps/ + tests/ are excluded so third-party + test code
+  # do not skew the floor.
+  #
+  # The target only fires when TF_COVERAGE is ON because gcovr would have
+  # nothing to read otherwise. It is NOT added to ALL — invoke it
+  # explicitly with `cmake --build <dir> --target coverage`.
+  find_program(TF_GCOVR_EXECUTABLE gcovr)
+  if(TF_GCOVR_EXECUTABLE)
+    add_custom_target(coverage
+      COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+      COMMAND ${TF_GCOVR_EXECUTABLE}
+        -r ${CMAKE_SOURCE_DIR}
+        --filter "src/"
+        --filter "server/"
+        --exclude "_deps"
+        --exclude "tests/"
+        --xml-pretty -o coverage.xml
+        --txt -o coverage.txt
+        --html-details coverage.html
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMENT "Running ctest + gcovr to produce coverage.{txt,xml,html}"
+      VERBATIM
+    )
+    # Depend on every instrumented binary so a fresh `cmake --build <dir>
+    # --target coverage` builds what it needs before running tests.
+    foreach(_tf_target IN LISTS TF_FIRST_PARTY_TARGETS)
+      if(TARGET ${_tf_target})
+        add_dependencies(coverage ${_tf_target})
+      endif()
+    endforeach()
+    message(STATUS "TF_COVERAGE: `coverage` target available "
+                   "(gcovr at ${TF_GCOVR_EXECUTABLE})")
+  else()
+    message(WARNING "TF_COVERAGE: gcovr not found in PATH; "
+                    "`coverage` target will not be created. "
+                    "Install via: pip install --user gcovr  OR  apt install gcovr")
+  endif()
+endif()
