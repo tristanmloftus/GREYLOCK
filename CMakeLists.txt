@@ -1940,6 +1940,23 @@ target_link_libraries(FuzzyMatchTests PRIVATE
 )
 add_test(NAME FuzzyMatchTests COMMAND FuzzyMatchTests)
 
+# --------------------------------------------------------------------------
+# CommandPaletteTests (Task v0.3-4)
+# Tests the CommandRegistry (and, once added, the CommandPalette modal).
+# Links only the registry source + fuzzy_match.h; no FTXUI/DataStore deps.
+# See tests/test_command_palette.cpp for the cases.
+# --------------------------------------------------------------------------
+add_executable(CommandPaletteTests
+  tests/test_command_palette.cpp
+  src/utils/CommandRegistry.cpp
+)
+tf_register_first_party(CommandPaletteTests)
+target_link_libraries(CommandPaletteTests PRIVATE
+  gtest
+  gtest_main
+)
+add_test(NAME CommandPaletteTests COMMAND CommandPaletteTests)
+
 # ==========================================================================
 # Phase 6: TF_COVERAGE — apply coverage flags + `coverage` custom target.
 #
