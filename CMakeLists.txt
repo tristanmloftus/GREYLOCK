@@ -1922,6 +1922,24 @@ if(WIN32)
 endif()
 add_test(NAME ConsolidationServiceTests COMMAND ConsolidationServiceTests)
 
+# --------------------------------------------------------------------------
+# FuzzyMatchTests (Task v0.3-4)
+# Pure-header unit tests for src/utils/fuzzy_match.h.  No FTXUI / no DataStore
+# dependencies; fuzzy_match.h is a single-header port of Forrest Smith's
+# fts_fuzzy_match algorithm.  See tests/test_fuzzy_match.cpp for the cases
+# (exact-substring beats interior, acronym match, case-insensitivity,
+# empty-pattern, out-of-order non-match, consecutive-beats-scattered).
+# --------------------------------------------------------------------------
+add_executable(FuzzyMatchTests
+  tests/test_fuzzy_match.cpp
+)
+tf_register_first_party(FuzzyMatchTests)
+target_link_libraries(FuzzyMatchTests PRIVATE
+  gtest
+  gtest_main
+)
+add_test(NAME FuzzyMatchTests COMMAND FuzzyMatchTests)
+
 # ==========================================================================
 # Phase 6: TF_COVERAGE — apply coverage flags + `coverage` custom target.
 #
