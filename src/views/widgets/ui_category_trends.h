@@ -33,6 +33,8 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
 
+#include "../ViewCommon.h"  // KeyHint
+
 namespace tf::widgets {
 
 // One row of the trends panel.
@@ -70,5 +72,9 @@ Component CategorySpendingTrends(const std::vector<tf::widgets::CategoryTrend>& 
 // border and the title in bright bold.  Default false preserves the v0.2
 // visual byte-for-byte (existing snapshot fixtures unchanged).
 Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items = 5, bool focused = false);
+
+// Task v0.3-5: contextual KeyHints for the StatusBar (v0.3-4).  Free
+// function; see ui_net_worth.h for the namespace + ownership rationale.
+std::vector<KeyHint> category_trends_hints_when_focused();
 
 } // namespace ftxui

@@ -34,6 +34,8 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
 
+#include "../ViewCommon.h"  // KeyHint
+
 namespace tf::widgets {
 
 // One institution's sync state.
@@ -71,5 +73,10 @@ Component SyncStatusIndicator(const std::vector<tf::widgets::SyncStatus>& status
 // border and the title in bright bold.  Default false preserves the v0.2
 // visual byte-for-byte (existing snapshot fixtures unchanged).
 Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses, bool focused = false);
+
+// Task v0.3-5: contextual KeyHints for the StatusBar (v0.3-4).  Free
+// function; see ui_net_worth.h for the namespace + ownership rationale.
+// R (capital) is the per-§3f re-auth flow trigger.
+std::vector<KeyHint> sync_status_hints_when_focused();
 
 } // namespace ftxui

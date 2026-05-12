@@ -132,4 +132,22 @@ Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// shovel_intelligence_hints_when_focused — v0.3-5 contextual StatusBar hints.
+// ---------------------------------------------------------------------------
+// Mirrors docs/UI_REDESIGN_V0.3.md §3d Example B's literal contents
+// ("[Enter] Drill in  [r] Refresh map  [/] Filter  [Esc] Unfocus") plus
+// the universal Tab + j/k navigation pair.
+// ---------------------------------------------------------------------------
+std::vector<KeyHint> shovel_intelligence_hints_when_focused() {
+    return {
+        {"Enter", "Drill in"},
+        {"r",     "Refresh map"},
+        {"/",     "Filter"},
+        {"Tab",   "Next widget"},
+        {"j/k",   "Move down/up"},
+        {"Esc",   "Unfocus"},
+    };
+}
+
 } // namespace ftxui

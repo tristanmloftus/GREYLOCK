@@ -148,4 +148,20 @@ Element ShovelScoreRenderer(double score, int supplier_count, double total_shove
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// shovel_score_hints_when_focused — v0.3-5 contextual StatusBar hints.
+// ---------------------------------------------------------------------------
+// Enter drills into the score composition (v0.3-2 owns the drill);
+// r recomputes via DiscoveryService::aggregate_supplier_spend per §3f.
+// ---------------------------------------------------------------------------
+std::vector<KeyHint> shovel_score_hints_when_focused() {
+    return {
+        {"Enter", "Drill into score"},
+        {"r",     "Recompute"},
+        {"Tab",   "Next widget"},
+        {"j/k",   "Move down/up"},
+        {"Esc",   "Unfocus"},
+    };
+}
+
 } // namespace ftxui

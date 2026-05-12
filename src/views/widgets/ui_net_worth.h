@@ -26,8 +26,12 @@
 //   src/views/DashboardView.cpp (the only caller today).
 // ---------------------------------------------------------------------------
 
+#include <vector>
+
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
+
+#include "../ViewCommon.h"  // KeyHint
 
 namespace ftxui {
 
@@ -44,5 +48,12 @@ Component NetWorthBreakdown(double checking, double savings, double credit, doub
 // border and the title row in bright bold.  Default false preserves the
 // v0.2 visual byte-for-byte (existing snapshot fixtures unchanged).
 Element NetWorthBreakdownRenderer(double checking, double savings, double credit, double investment, double net_worth, bool focused = false);
+
+// Task v0.3-5: contextual KeyHints rendered by the StatusBar (v0.3-4)
+// when this widget is the focused panel.  Free function (NOT a member)
+// so the StatusBar can call it through a switch on WidgetId without
+// needing a widget-instance handle.  Order matters — top-row layout
+// reads left-to-right.
+std::vector<KeyHint> net_worth_hints_when_focused();
 
 } // namespace ftxui

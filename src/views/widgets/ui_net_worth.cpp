@@ -124,4 +124,21 @@ Element NetWorthBreakdownRenderer(double checking, double savings, double credit
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// net_worth_hints_when_focused — v0.3-5 contextual StatusBar hints.
+// ---------------------------------------------------------------------------
+// Returns the per-widget hint list the StatusBar (v0.3-4) consumes when
+// this panel is the focused widget.  Mirrors docs/UI_REDESIGN_V0.3.md §3d
+// Example B and §3f's per-widget action table (Enter drills, r refreshes).
+// ---------------------------------------------------------------------------
+std::vector<KeyHint> net_worth_hints_when_focused() {
+    return {
+        {"Enter", "Drill into Net Worth"},
+        {"r",     "Recompute"},
+        {"Tab",   "Next widget"},
+        {"j/k",   "Move down/up"},
+        {"Esc",   "Unfocus"},
+    };
+}
+
 } // namespace ftxui

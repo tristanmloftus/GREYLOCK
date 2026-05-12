@@ -31,8 +31,12 @@
 //   src/views/DashboardView.cpp (the only caller today).
 // ---------------------------------------------------------------------------
 
+#include <vector>
+
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
+
+#include "../ViewCommon.h"  // KeyHint
 
 namespace ftxui {
 
@@ -45,5 +49,9 @@ Component ShovelScore(double score, int supplier_count, double total_shovel_spen
 // border and the title in bright bold.  Default false preserves the v0.2
 // visual byte-for-byte (existing snapshot fixtures unchanged).
 Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend, bool focused = false);
+
+// Task v0.3-5: contextual KeyHints for the StatusBar (v0.3-4).  Free
+// function; see ui_net_worth.h for the namespace + ownership rationale.
+std::vector<KeyHint> shovel_score_hints_when_focused();
 
 } // namespace ftxui

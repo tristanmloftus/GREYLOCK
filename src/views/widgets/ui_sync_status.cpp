@@ -115,4 +115,21 @@ Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& 
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// sync_status_hints_when_focused — v0.3-5 contextual StatusBar hints.
+// ---------------------------------------------------------------------------
+// r triggers BackendClient::refresh() (Phase 4 plumbing); R begins the
+// Plaid re-auth flow for the selected institution per §3f.
+// ---------------------------------------------------------------------------
+std::vector<KeyHint> sync_status_hints_when_focused() {
+    return {
+        {"Enter", "Drill into institution"},
+        {"r",     "Refresh"},
+        {"R",     "Re-auth"},
+        {"Tab",   "Next widget"},
+        {"j/k",   "Move down/up"},
+        {"Esc",   "Unfocus"},
+    };
+}
+
 } // namespace ftxui

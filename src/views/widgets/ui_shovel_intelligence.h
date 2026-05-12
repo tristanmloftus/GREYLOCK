@@ -32,6 +32,8 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
 
+#include "../ViewCommon.h"  // KeyHint
+
 namespace tf::widgets {
 
 // One discovered shovel supplier.
@@ -71,5 +73,10 @@ Component ShovelIntelligence(const std::vector<tf::widgets::SupplierSpend>& supp
 // border and the title in bright bold.  Default false preserves the v0.2
 // visual byte-for-byte (existing snapshot fixtures unchanged).
 Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>& suppliers, bool focused = false);
+
+// Task v0.3-5: contextual KeyHints for the StatusBar (v0.3-4).  Free
+// function; see ui_net_worth.h for the namespace + ownership rationale.
+// Matches docs/UI_REDESIGN_V0.3.md §3d Example B verbatim.
+std::vector<KeyHint> shovel_intelligence_hints_when_focused();
 
 } // namespace ftxui

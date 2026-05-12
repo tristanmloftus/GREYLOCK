@@ -140,4 +140,22 @@ Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTr
     return panel;
 }
 
+// ---------------------------------------------------------------------------
+// category_trends_hints_when_focused — v0.3-5 contextual StatusBar hints.
+// ---------------------------------------------------------------------------
+// Returns the per-widget hint list the StatusBar (v0.3-4) consumes when
+// this panel is the focused widget.  `/` is widget-local filter per
+// docs/UI_REDESIGN_V0.3.md §3f.
+// ---------------------------------------------------------------------------
+std::vector<KeyHint> category_trends_hints_when_focused() {
+    return {
+        {"Enter", "Drill into category"},
+        {"r",     "Recompute MoM"},
+        {"/",     "Filter"},
+        {"Tab",   "Next widget"},
+        {"j/k",   "Move down/up"},
+        {"Esc",   "Unfocus"},
+    };
+}
+
 } // namespace ftxui
