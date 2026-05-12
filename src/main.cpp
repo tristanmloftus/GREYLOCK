@@ -37,6 +37,10 @@
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
 #include "views/drills/Drill_ShovelScore.h"
+#include "views/CommandPalette.h"
+#include "views/HelpOverlay.h"
+#include "views/StatusBar.h"
+#include "utils/CommandRegistry.h"
 #include "migration/V01Migrator.h"
 
 using namespace ftxui;
@@ -68,6 +72,21 @@ public:
     // view-specific handlers.  Reset on view-switch so a return to
     // Dashboard starts at the no-widget-focused state.
     tf::views::FocusController focus_;
+
+    // Task v0.3-4: modal overlay components.  Open via ":" (palette) and
+    // "?" (help).  Event routing: when EITHER modal is open it sees the
+    // event first and consumes it (palette: typing + selection + dispatch;
+    // help: only Esc).  Esc closes whichever modal is open AND calls
+    // focus_.exit_modal() so the controller leaves Modal level.  See
+    // docs/UI_REDESIGN_V0.3.md §3c, Appendix C.2, Appendix C.3.
+    tf::views::CommandPalette palette_;
+    tf::views::HelpOverlay    help_;
+    tf::views::StatusBar      status_bar_;
+
+    // Closure for screen exit -- wired in main() so dispatch(Quit) can
+    // gracefully terminate the FTXUI loop.  Defaults to a no-op until
+    // main() installs the real closure.
+    std::function<void()> on_exit_;
 
     App() {
         // Load config for API keys
@@ -167,6 +186,12 @@ public:
 
         update_views_for_entity();
         data_store.save();
+
+        // Wire the command palette's dispatcher.  The palette is data-
+        // only; the App provides the behaviour for each CommandId.
+        palette_.set_dispatcher([this](tf::utils::CommandId id) {
+            dispatch(id);
+        });
     }
 
     void update_views_for_entity() {
@@ -189,6 +214,147 @@ public:
             Logger::instance().info("Data saved successfully");
         } else {
             Logger::instance().error("Failed to save data");
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Modal lifecycle helpers (Task v0.3-4).
+    //
+    // open_palette / open_help do BOTH the modal's open() and the focus
+    // controller's enter_modal() so the App's UI invariants stay in
+    // lock-step.  close_modals() symmetrically closes whichever modal
+    // (or both) is open and tells the focus controller to exit.
+    // ---------------------------------------------------------------------
+    void open_palette() {
+        if (palette_.is_open() || help_.is_open()) return;
+        palette_.open();
+        focus_.enter_modal();
+    }
+
+    void open_help() {
+        if (palette_.is_open() || help_.is_open()) return;
+        help_.open();
+        focus_.enter_modal();
+    }
+
+    void close_modals() {
+        const bool was_open = palette_.is_open() || help_.is_open();
+        palette_.close();
+        help_.close();
+        if (was_open) focus_.exit_modal();
+    }
+
+    // ---------------------------------------------------------------------
+    // dispatch — map a CommandId from the palette onto a concrete app
+    // action.  The registry is data-only on purpose; ALL behaviour
+    // lives here so tests for the registry don't pull in DataStore.
+    // ---------------------------------------------------------------------
+    void dispatch(tf::utils::CommandId id) {
+        using tf::utils::CommandId;
+        switch (id) {
+            case CommandId::SwitchView_Dashboard:
+                current_tab = 0; focus_.reset(); return;
+            case CommandId::SwitchView_Accounts:
+                current_tab = 1; focus_.reset(); return;
+            case CommandId::SwitchView_Transactions:
+                current_tab = 2; focus_.reset(); return;
+            case CommandId::SwitchView_Budget:
+                current_tab = 3; focus_.reset(); return;
+
+            case CommandId::SwitchEntity_Personal:
+                if (data_store.entities.size() >= 1) {
+                    current_entity = 0; update_views_for_entity();
+                }
+                return;
+            case CommandId::SwitchEntity_Business:
+                if (data_store.entities.size() >= 2) {
+                    current_entity = 1; update_views_for_entity();
+                }
+                return;
+
+            case CommandId::LinkPlaid:
+                status_message = "Plaid: Use 'L' to link an account "
+                                 "via the server endpoint.";
+                return;
+            case CommandId::LinkPlaidTest: {
+                auto plaid = services.get_plaid();
+                if (plaid && !data_store.entities.empty() &&
+                    !data_store.accounts.empty()) {
+                    const auto& acc = data_store.accounts[0];
+                    const bool ok = plaid->link_account(
+                        acc.id, "public-sandbox-test");
+                    status_message = ok ? "Account linked via server."
+                                        : "Link failed: " +
+                                          plaid->get_last_error();
+                } else {
+                    status_message = "No accounts to link.";
+                }
+                return;
+            }
+
+            case CommandId::OpenConfig: {
+                auto client_id = ConfigManager::instance().get_plaid_client_id();
+                auto secret    = ConfigManager::instance().get_plaid_secret();
+                std::string c  = client_id.has_value() ? "SET" : "NOT SET";
+                std::string s  = secret.has_value()    ? "SET" : "NOT SET";
+                status_message = "Config: ClientID=[" + c + "] Secret=["
+                                 + s + "] - Edit .env to configure";
+                return;
+            }
+
+            case CommandId::Quit:
+                save();
+                if (on_exit_) on_exit_();
+                return;
+
+            // Drill-into commands: focus the corresponding widget on the
+            // Dashboard.  Actual drill-down panels land in v0.3-2/-3.
+            case CommandId::DrillInto_NetWorth:
+            case CommandId::DrillInto_ShovelScore:
+            case CommandId::DrillInto_SyncStatus:
+            case CommandId::DrillInto_ShovelIntelligence:
+            case CommandId::DrillInto_CategoryTrends:
+                current_tab = 0;
+                focus_.reset();
+                // Walk Tab presses until the right widget is focused.
+                // Order matches WidgetId enum -- see FocusController.h.
+                {
+                    int steps = 0;
+                    switch (id) {
+                        case CommandId::DrillInto_NetWorth:           steps = 1; break;
+                        case CommandId::DrillInto_ShovelScore:        steps = 2; break;
+                        case CommandId::DrillInto_SyncStatus:         steps = 3; break;
+                        case CommandId::DrillInto_ShovelIntelligence: steps = 4; break;
+                        case CommandId::DrillInto_CategoryTrends:     steps = 5; break;
+                        default: break;
+                    }
+                    for (int i = 0; i < steps; ++i) {
+                        focus_.handle_key(ftxui::Event::Tab);
+                    }
+                }
+                return;
+
+            case CommandId::Help:
+                open_help();
+                return;
+
+            case CommandId::Logout:
+                status_message = "Logout: run TerminalFinance --logout from CLI.";
+                return;
+            case CommandId::Whoami:
+                status_message = "Whoami: run TerminalFinance --whoami from CLI.";
+                return;
+            case CommandId::Refresh:
+                status_message = "Refresh: backend sync not wired in v0.3-4.";
+                return;
+            case CommandId::Search_Transactions:
+                // Search box lands in a later v0.3 task; until then we
+                // route the user to the Transactions view and leave a
+                // hint in the status bar.
+                current_tab = 2; focus_.reset();
+                status_message = "Search transactions: type in the "
+                                 "Transactions view (search box: v0.3+).";
+                return;
         }
     }
 
@@ -276,32 +442,58 @@ public:
             }
         }
 
-        // Task v0.3-1: status bar reads context_hints() from the focus
-        // controller.  Returns empty for now (v0.3-5 populates per-focus
-        // hints); the call site is in place so wiring the populated
-        // version later is purely additive.
-        const auto hints = focus_.context_hints();
-        Element hints_line = text("");
-        if (!hints.empty()) {
-            std::string joined;
-            for (size_t i = 0; i < hints.size(); ++i) {
-                if (i) joined += "  ";
-                joined += hints[i];
-            }
-            hints_line = text("  " + joined) | dim;
-        }
+        // Task v0.3-4: status bar is now a class (StatusBar) that owns
+        // the two-row layout.  v0.3-1 left context_hints() empty; v0.3-5
+        // will populate it.  The StatusBar reads from focus_ on every
+        // render so additive changes don't churn this call site.
+        const std::string current_view_name =
+            (current_tab >= 0 && current_tab < (int)tabs.size())
+                ? tabs[(size_t)current_tab]
+                : std::string("Unknown");
+        Element status_bar_element = status_bar_.render(focus_, current_view_name);
 
-        return vbox({
+        // ----------------------------------------------------------------
+        // Background view -- composes the existing entity/view tabs, the
+        // active tab content, and the (extracted) status bar.  IMPORTANT:
+        // the bottom row matches the pre-v0.3-4 status string byte-for-
+        // byte so existing snapshot fixtures of the App do not regress.
+        // The "hints_line" placeholder kept by v0.3-1 is the StatusBar's
+        // top row now.
+        // ----------------------------------------------------------------
+        Element background = vbox({
             text("") | bgcolor(Color::Black),
             hbox(entity_tabs) | color(LED_BLUE) | bgcolor(Color::Black),
             hbox(view_tabs) | color(LED_BLUE) | bgcolor(Color::Black),
             separator() | color(LED_BLUE_DIM),
             tab_content() | flex | bgcolor(Color::Black),
             separator() | color(LED_BLUE_DIM),
-            text("  [1-2] Switch entity  [Tab] Switch view  [P] Link Plaid  [L] Link test  [C] Config  [Q] Quit") | dim,
-            hints_line,
+            status_bar_element,
             status_message.empty() ? text("") : text("  " + status_message) | color(Color::Green),
         }) | bgcolor(Color::Black) | color(LED_BLUE);
+
+        // ----------------------------------------------------------------
+        // Modal overlay (Task v0.3-4) -- if either palette or help is
+        // open, dbox composites it on top of the background.  Centered
+        // via filler() padding.  See docs/UI_REDESIGN_V0.3.md Appendix
+        // C.2.
+        // ----------------------------------------------------------------
+        if (palette_.is_open()) {
+            Element overlay = vbox({
+                filler(),
+                hbox({ filler(), palette_.render(), filler() }),
+                filler(),
+            });
+            return dbox({ background, overlay });
+        }
+        if (help_.is_open()) {
+            Element overlay = vbox({
+                filler(),
+                hbox({ filler(), help_.render(), filler() }),
+                filler(),
+            });
+            return dbox({ background, overlay });
+        }
+        return background;
     }
 };
 
@@ -792,12 +984,61 @@ int main(int argc, char** argv) {
     auto screen = ScreenInteractive::Fullscreen();
 
     App app;
+    // Wire the graceful-exit closure so dispatch(Quit) / Esc-on-empty
+    // can terminate the FTXUI loop from inside the App.
+    app.on_exit_ = screen.ExitLoopClosure();
 
     auto component = Renderer([&] {
         return app.render();
     });
 
     component = CatchEvent(component, [&](Event event) {
+        // -----------------------------------------------------------------
+        // Task v0.3-4: modal layer is top priority.  If the command
+        // palette or help overlay is open, route ALL events through it
+        // first.  Esc inside a modal is consumed by the modal itself;
+        // see CommandPalette::handle_key / HelpOverlay::handle_key.
+        //
+        // When the modal closes (handle_key returns true after consuming
+        // Esc/Enter), we still propagate the focus controller's
+        // exit_modal() so the App's level state stays in sync.  The
+        // modal -> dispatch -> close chain calls close_modals() through
+        // dispatch's path; here we mirror it for the Esc-cancel path.
+        // -----------------------------------------------------------------
+        if (app.palette_.is_open()) {
+            const bool was_open = true;
+            const bool consumed = app.palette_.handle_key(event);
+            if (was_open && !app.palette_.is_open()) {
+                app.focus_.exit_modal();
+            }
+            if (consumed) return true;
+        }
+        if (app.help_.is_open()) {
+            const bool was_open = true;
+            const bool consumed = app.help_.handle_key(event);
+            if (was_open && !app.help_.is_open()) {
+                app.focus_.exit_modal();
+            }
+            if (consumed) return true;
+        }
+
+        // -----------------------------------------------------------------
+        // Task v0.3-4: global hotkeys ":" (palette) and "?" (help).
+        // These open the modal layer; they MUST run before the focus
+        // controller so a user pressing ":" on the Dashboard with a
+        // widget focused doesn't accidentally route the colon through
+        // hjkl (it wouldn't match, but the precedence is the
+        // documented one -- Appendix C.3).
+        // -----------------------------------------------------------------
+        if (event == Event::Character(':')) {
+            app.open_palette();
+            return true;
+        }
+        if (event == Event::Character('?')) {
+            app.open_help();
+            return true;
+        }
+
         // -----------------------------------------------------------------
         // Task v0.3-1: route Tab/Shift-Tab/hjkl/arrows/Esc through the
         // FocusController FIRST when the Dashboard view is active.  If

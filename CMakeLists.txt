@@ -444,6 +444,11 @@ add_executable(TerminalFinance
   # Task v0.3-2: drill views for net_worth + shovel_score.
   src/views/drills/Drill_NetWorth.cpp
   src/views/drills/Drill_ShovelScore.cpp
+  # Task v0.3-4: command palette / help overlay / status bar.
+  src/views/CommandPalette.cpp
+  src/views/HelpOverlay.cpp
+  src/views/StatusBar.cpp
+  src/utils/CommandRegistry.cpp
   ${COMMON_SOURCES}
   $<TARGET_OBJECTS:tf_widgets>
 )
