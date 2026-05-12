@@ -106,3 +106,65 @@ TEST(WidgetSnapshot, ConsolidationUi) {
     auto element = ftxui::BankConnectionStatusRenderer(accounts);
     tf::snapshot::ExpectMatchesFixture(element, W, H, "consolidation_ui");
 }
+
+// ---------------------------------------------------------------------------
+// Task v0.3-1: focused-variant snapshots.
+// ---------------------------------------------------------------------------
+// One fixture per widget rendered with `focused=true`.  Inputs match the
+// unfocused-variant tests above byte-for-byte so the diff between paired
+// fixtures isolates the focus visual: yellow rounded border + bright
+// bold title.  The existing unfocused fixtures remain unchanged.
+// ---------------------------------------------------------------------------
+
+TEST(WidgetSnapshot, NetWorthFocused) {
+    auto element = ftxui::NetWorthBreakdownRenderer(
+        /*checking=*/1234.56,
+        /*savings=*/2500.00,
+        /*credit=*/-500.00,
+        /*investment=*/10000.00,
+        /*net_worth=*/13234.56,
+        /*focused=*/true);
+    tf::snapshot::ExpectMatchesFixture(element, W, H, "net_worth_focused");
+}
+
+TEST(WidgetSnapshot, ShovelScoreFocused) {
+    auto element = ftxui::ShovelScoreRenderer(
+        /*score=*/72.0,
+        /*supplier_count=*/4,
+        /*total_shovel_spend=*/5890.00,
+        /*focused=*/true);
+    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_score_focused");
+}
+
+TEST(WidgetSnapshot, SyncStatusFocused) {
+    std::vector<tf::widgets::SyncStatus> statuses = {
+        {/*institution=*/"Chase",            /*connected=*/true,  /*last_sync=*/"2026-04-01", /*err=*/""},
+        {/*institution=*/"Bank of America",  /*connected=*/false, /*last_sync=*/"",            /*err=*/"auth failed"},
+        {/*institution=*/"Fidelity",         /*connected=*/true,  /*last_sync=*/"2026-03-28", /*err=*/""},
+    };
+    auto element = ftxui::SyncStatusIndicatorRenderer(statuses, /*focused=*/true);
+    tf::snapshot::ExpectMatchesFixture(element, W, H, "sync_status_focused");
+}
+
+TEST(WidgetSnapshot, ShovelIntelligenceFocused) {
+    std::vector<tf::widgets::SupplierSpend> suppliers = {
+        {/*ticker=*/"NVDA", /*company=*/"NVIDIA Corp",   /*amount=*/2500.00, /*pct=*/120.0},
+        {/*ticker=*/"AMZN", /*company=*/"Amazon",        /*amount=*/1800.00, /*pct=*/15.0},
+        {/*ticker=*/"MSFT", /*company=*/"Microsoft",     /*amount=*/950.00,  /*pct=*/-10.0},
+        {/*ticker=*/"GOOGL",/*company=*/"Alphabet",      /*amount=*/640.00,  /*pct=*/0.0},
+    };
+    auto element = ftxui::ShovelIntelligenceRenderer(suppliers, /*focused=*/true);
+    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_intelligence_focused");
+}
+
+TEST(WidgetSnapshot, CategoryTrendsFocused) {
+    std::vector<tf::widgets::CategoryTrend> trends = {
+        {/*name=*/"Food & Dining",  /*emoji=*/"[food]", /*current=*/420.50, /*pct=*/15.0},
+        {/*name=*/"Transportation", /*emoji=*/"[trsp]", /*current=*/180.00, /*pct=*/-25.0},
+        {/*name=*/"Shopping",       /*emoji=*/"[shop]", /*current=*/600.00, /*pct=*/0.0},
+        {/*name=*/"Entertainment",  /*emoji=*/"[ent ]", /*current=*/75.00,  /*pct=*/50.0},
+        {/*name=*/"Utilities",      /*emoji=*/"[util]", /*current=*/220.00, /*pct=*/-5.0},
+    };
+    auto element = ftxui::CategorySpendingTrendsRenderer(trends, /*max_items=*/5, /*focused=*/true);
+    tf::snapshot::ExpectMatchesFixture(element, W, H, "category_trends_focused");
+}

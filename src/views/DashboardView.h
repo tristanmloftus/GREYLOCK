@@ -37,6 +37,8 @@
 #include <ftxui/dom/elements.hpp>
 #include <string>
 
+#include "FocusController.h"
+
 class DataStore;
 
 // ---------------------------------------------------------------------------
@@ -63,7 +65,14 @@ public:
     // Render the composed dashboard for `current_month`.
     //   current_month: "YYYY-MM" (e.g. "2026-05").  Used to bucket per-month
     //                  category spend and per-ticker shovel velocity.
-    ftxui::Element render(const std::string& current_month);
+    //   focus:         (Task v0.3-1) optional read-only focus state.  When
+    //                  a widget is reported as focused via
+    //                  FocusController::is_widget_focused(), the matching
+    //                  panel renders with the yellow focus border and a
+    //                  bright title.  A nullptr means "no focus state" and
+    //                  preserves the v0.2 visual byte-for-byte.
+    ftxui::Element render(const std::string& current_month,
+                          const tf::views::FocusController* focus = nullptr);
 
 private:
     DataStore& data_store_;

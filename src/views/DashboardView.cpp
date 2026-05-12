@@ -196,8 +196,17 @@ DashboardView::DashboardView(DataStore& data_store)
 // responsive grid.  No allocation beyond what the per-panel POD vectors
 // require; the FTXUI Element graph is created fresh each frame.
 // ---------------------------------------------------------------------------
-ftxui::Element DashboardView::render(const std::string& current_month) {
+ftxui::Element DashboardView::render(const std::string& current_month,
+                                     const tf::views::FocusController* focus) {
     using namespace ftxui;
+    using tf::views::WidgetId;
+
+    // Lambda: query the FocusController for a given WidgetId.  Returns
+    // false when no controller was provided (e.g. preserves the v0.2
+    // unfocused render byte-for-byte for tests / non-focusing callers).
+    auto is_focused = [focus](WidgetId w) -> bool {
+        return focus != nullptr && focus->is_widget_focused(w);
+    };
 
     // ======================================================================
     // PANEL 1: ui_net_worth
@@ -234,7 +243,8 @@ ftxui::Element DashboardView::render(const std::string& current_month) {
     }
 
     Element net_worth_panel =
-        NetWorthBreakdownRenderer(checking, savings, credit, investment, net_worth);
+        NetWorthBreakdownRenderer(checking, savings, credit, investment, net_worth,
+                                  is_focused(WidgetId::NetWorth));
 
     // ======================================================================
     // PANEL 2: ui_category_trends
@@ -282,7 +292,8 @@ ftxui::Element DashboardView::render(const std::string& current_month) {
         category_trends.push_back(ct);
     }
     Element category_trends_panel =
-        CategorySpendingTrendsRenderer(category_trends, /*max_items*/5);
+        CategorySpendingTrendsRenderer(category_trends, /*max_items*/5,
+                                       is_focused(WidgetId::CategoryTrends));
 
     // ======================================================================
     // PANELS 3 + 4: ui_shovel_intelligence + ui_shovel_score
@@ -343,7 +354,8 @@ ftxui::Element DashboardView::render(const std::string& current_month) {
     std::sort(suppliers.begin(), suppliers.end(),
               [](const auto& a, const auto& b) { return a.amount > b.amount; });
 
-    Element shovel_intel_panel = ShovelIntelligenceRenderer(suppliers);
+    Element shovel_intel_panel =
+        ShovelIntelligenceRenderer(suppliers, is_focused(WidgetId::ShovelIntelligence));
 
     double total_shovel_spend = 0.0;
     for (const auto& [_, t] : ticker_total) total_shovel_spend += t;
@@ -351,7 +363,8 @@ ftxui::Element DashboardView::render(const std::string& current_month) {
     Element shovel_score_panel =
         ShovelScoreRenderer(shovel_score_value,
                             static_cast<int>(suppliers.size()),
-                            total_shovel_spend);
+                            total_shovel_spend,
+                            is_focused(WidgetId::ShovelScore));
 
     // ======================================================================
     // PANEL 5: ui_sync_status
@@ -403,7 +416,8 @@ ftxui::Element DashboardView::render(const std::string& current_month) {
     std::sort(sync_statuses.begin(), sync_statuses.end(),
               [](const auto& a, const auto& b) { return a.institution < b.institution; });
 
-    Element sync_status_panel = SyncStatusIndicatorRenderer(sync_statuses);
+    Element sync_status_panel =
+        SyncStatusIndicatorRenderer(sync_statuses, is_focused(WidgetId::SyncStatus));
 
     // ======================================================================
     // COMPOSE: two-row responsive grid.

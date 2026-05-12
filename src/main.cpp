@@ -34,6 +34,7 @@
 #include "views/AccountsView.h"
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
+#include "views/FocusController.h"
 #include "migration/V01Migrator.h"
 
 using namespace ftxui;
@@ -59,6 +60,12 @@ public:
     int current_tab = 0;
     std::string status_message = "";
     std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget"};
+
+    // Task v0.3-1: Dashboard focus state machine.  Routes Tab/Shift-Tab/
+    // hjkl/arrows/Esc when current_tab == 0 (Dashboard) BEFORE any legacy
+    // view-specific handlers.  Reset on view-switch so a return to
+    // Dashboard starts at the no-widget-focused state.
+    tf::views::FocusController focus_;
 
     App() {
         // Load config for API keys
@@ -192,7 +199,7 @@ public:
         auto tab_content = [this]() -> Element {
             std::string month = get_current_month();
             switch (current_tab) {
-                case 0: return dashboard_view->render(month);
+                case 0: return dashboard_view->render(month, &focus_);
                 case 1: return accounts_view->render();
                 case 2: return transactions_view->render();
                 case 3: return budget_view->render(month);
@@ -225,6 +232,21 @@ public:
             }
         }
 
+        // Task v0.3-1: status bar reads context_hints() from the focus
+        // controller.  Returns empty for now (v0.3-5 populates per-focus
+        // hints); the call site is in place so wiring the populated
+        // version later is purely additive.
+        const auto hints = focus_.context_hints();
+        Element hints_line = text("");
+        if (!hints.empty()) {
+            std::string joined;
+            for (size_t i = 0; i < hints.size(); ++i) {
+                if (i) joined += "  ";
+                joined += hints[i];
+            }
+            hints_line = text("  " + joined) | dim;
+        }
+
         return vbox({
             text("") | bgcolor(Color::Black),
             hbox(entity_tabs) | color(LED_BLUE) | bgcolor(Color::Black),
@@ -233,6 +255,7 @@ public:
             tab_content() | flex | bgcolor(Color::Black),
             separator() | color(LED_BLUE_DIM),
             text("  [1-2] Switch entity  [Tab] Switch view  [P] Link Plaid  [L] Link test  [C] Config  [Q] Quit") | dim,
+            hints_line,
             status_message.empty() ? text("") : text("  " + status_message) | color(Color::Green),
         }) | bgcolor(Color::Black) | color(LED_BLUE);
     }
@@ -731,6 +754,27 @@ int main(int argc, char** argv) {
     });
 
     component = CatchEvent(component, [&](Event event) {
+        // -----------------------------------------------------------------
+        // Task v0.3-1: route Tab/Shift-Tab/hjkl/arrows/Esc through the
+        // FocusController FIRST when the Dashboard view is active.  If
+        // consumed, the legacy handlers below never see the event.
+        //
+        // Outside the Dashboard view we explicitly do NOT consult the
+        // focus controller -- Tab/Shift-Tab there must continue to cycle
+        // top-level views (existing v0.2 behavior) and the controller is
+        // kept in a reset state.  The redesign §3a §"How focus moves"
+        // documents this Dashboard-only carve-out.
+        // -----------------------------------------------------------------
+        if (app.current_tab == 0) {
+            if (app.focus_.handle_key(event)) {
+                return true;
+            }
+        }
+
+        // Legacy Esc-to-exit (v0.2).  Preserved for non-Dashboard views.
+        // On Dashboard, the focus controller swallows Esc (either Widget
+        // -> Dashboard pop, or explicit no-op at Dashboard top-level per
+        // Q3), so this branch is unreachable from current_tab == 0.
         if (event == Event::Escape) {
             screen.ExitLoopClosure()();
             return true;
@@ -748,17 +792,21 @@ int main(int argc, char** argv) {
             return true;
         }
 
-        // View tab switching
+        // View tab switching (non-Dashboard only -- Tab on Dashboard is
+        // claimed above by the focus controller).
         if (event == Event::Tab) {
             app.current_tab = (app.current_tab + 1) % app.tabs.size();
+            app.focus_.reset();
             return true;
         }
         if (event == Event::TabReverse) {
             app.current_tab = (app.current_tab - 1 + (int)app.tabs.size()) % app.tabs.size();
+            app.focus_.reset();
             return true;
         }
 
-        // Arrow navigation within views
+        // Arrow navigation within views (non-Dashboard only -- arrows on
+        // Dashboard are claimed by the focus controller above).
         if (event == Event::ArrowUp) {
             if (app.current_tab == 1) app.accounts_view->set_selected(app.accounts_view->get_selected() > 0 ? app.accounts_view->get_selected() - 1 : 0);
             if (app.current_tab == 2) app.transactions_view->set_selected(app.transactions_view->get_selected() > 0 ? app.transactions_view->get_selected() - 1 : 0);

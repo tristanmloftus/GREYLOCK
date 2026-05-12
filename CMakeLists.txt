@@ -1762,6 +1762,51 @@ target_link_libraries(FocusControllerTests PRIVATE
 add_test(NAME FocusControllerTests COMMAND FocusControllerTests)
 
 # --------------------------------------------------------------------------
+# DashboardFocusSnapshotTests (Task v0.3-1)
+# End-to-end snapshot: renders DashboardView with FocusController focused
+# on NetWorth and compares the result to a checked-in fixture under
+# tests/snapshot/fixtures/dashboard_net_worth_focused.txt.  Links the
+# full DataStore + DiscoveryService dependency chain because the
+# DashboardView pulls accounts/transactions through them on each render.
+# --------------------------------------------------------------------------
+add_executable(DashboardFocusSnapshotTests
+  tests/test_dashboard_focus_snapshot.cpp
+  src/views/DashboardView.cpp
+  src/views/FocusController.cpp
+  ${COMMON_SOURCES}
+  $<TARGET_OBJECTS:tf_widgets>
+)
+tf_register_first_party(DashboardFocusSnapshotTests)
+if(MSVC)
+  target_compile_options(DashboardFocusSnapshotTests PRIVATE /MT)
+endif()
+target_link_libraries(DashboardFocusSnapshotTests PRIVATE
+  gtest
+  gtest_main
+  ftxui::dom
+  ftxui::screen
+  ftxui::component
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+if(WIN32)
+  target_link_libraries(DashboardFocusSnapshotTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(DashboardFocusSnapshotTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+else()
+  target_link_libraries(DashboardFocusSnapshotTests PRIVATE CURL::libcurl)
+endif()
+add_test(
+  NAME DashboardFocusSnapshotTests
+  COMMAND DashboardFocusSnapshotTests
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# --------------------------------------------------------------------------
 # ConsolidationServiceTests (Phase 5)
 # Locks in: cross-account transfer dedup behavior, same-account duplicate
 # dedup, idempotency (f(f(x)) == f(x)), hash-stability across runs.
