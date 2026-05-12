@@ -183,13 +183,21 @@ bool FocusController::handle_key(const ftxui::Event& event) {
     // exit the app).  This gates the v0.3 quit-via-q convention.
     // ---------------------------------------------------------------------
     if (event == Event::Escape) {
+        // Drill -> Widget: pop the drill, restore widget focus on the
+        // widget that owned it.  Task v0.3-2.
+        if (level_ == FocusLevel::Drill) {
+            level_    = FocusLevel::Widget;
+            focused_  = drilled_;
+            drilled_  = WidgetId::None;
+            return true;
+        }
         if (level_ == FocusLevel::Widget) {
             level_   = FocusLevel::Dashboard;
             focused_ = WidgetId::None;
             return true;
         }
-        // Dashboard / Drill / Modal: no-op for this task.  Higher tasks
-        // will fill in Drill/Modal pops; Dashboard stays a hard no-op.
+        // Dashboard / Modal: no-op for this task.  Dashboard stays a hard
+        // no-op (Q3 of the design); Modal handling lands in v0.3-4.
         if (level_ == FocusLevel::Dashboard) {
             return false;
         }
@@ -238,7 +246,9 @@ bool FocusController::handle_key(const ftxui::Event& event) {
     // ---------------------------------------------------------------------
     // hjkl + arrows — grid-resolved movement.  Only meaningful when a
     // widget is already focused; from Dashboard level, hjkl/arrows are
-    // not claimed (the App's view-specific handlers see them).
+    // not claimed (the App's view-specific handlers see them).  From
+    // Drill level, hjkl/arrows fall through here (return false) so the
+    // App can route them to the drill view's own scroll handler.
     // ---------------------------------------------------------------------
     if (level_ != FocusLevel::Widget) return false;
 
@@ -278,6 +288,46 @@ bool FocusController::is_widget_focused(WidgetId w) const noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// Drill-level transitions (Task v0.3-2).
+// ---------------------------------------------------------------------------
+// enter_drill: Widget(w) -> Drill(w).  Only valid from Widget level,
+// and only when w matches the currently focused widget (the App MUST
+// only call enter_drill on Enter while a widget is focused).  Other
+// shapes of caller error return false without mutating state.
+//
+// exit_drill: Drill(w) -> Widget(w).  Symmetric.
+//
+// drilled_widget: trivial accessor used by main.cpp render() to pick
+// which Drill_* view to instantiate.
+// ---------------------------------------------------------------------------
+bool FocusController::enter_drill(WidgetId w) {
+    if (level_ != FocusLevel::Widget) return false;
+    if (w == WidgetId::None)          return false;
+    // Defensive: only drill from the widget that's actually focused.
+    // The App's wiring guarantees this, but checking here keeps the
+    // state machine self-consistent under future re-wires.
+    if (focused_ != w)                return false;
+    drilled_ = w;
+    level_   = FocusLevel::Drill;
+    // focused_ stays set; render code can still read focused_widget()
+    // while we're inside the drill if it wants the underlying widget.
+    return true;
+}
+
+bool FocusController::exit_drill() {
+    if (level_ != FocusLevel::Drill) return false;
+    level_   = FocusLevel::Widget;
+    focused_ = drilled_;
+    drilled_ = WidgetId::None;
+    return true;
+}
+
+WidgetId FocusController::drilled_widget() const noexcept {
+    if (level_ != FocusLevel::Drill) return WidgetId::None;
+    return drilled_;
+}
+
+// ---------------------------------------------------------------------------
 // reset — restore initial state.  Called by the App when switching away
 // from the Dashboard so a future return lands at Dashboard level rather
 // than retaining a stale widget focus.
@@ -285,6 +335,7 @@ bool FocusController::is_widget_focused(WidgetId w) const noexcept {
 void FocusController::reset() {
     level_   = FocusLevel::Dashboard;
     focused_ = WidgetId::None;
+    drilled_ = WidgetId::None;
     back_stack_.clear();
 }
 

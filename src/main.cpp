@@ -35,6 +35,8 @@
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
 #include "views/FocusController.h"
+#include "views/drills/Drill_NetWorth.h"
+#include "views/drills/Drill_ShovelScore.h"
 #include "migration/V01Migrator.h"
 
 using namespace ftxui;
@@ -198,6 +200,48 @@ public:
     Element render() {
         auto tab_content = [this]() -> Element {
             std::string month = get_current_month();
+            // Task v0.3-2: when a Dashboard widget has been drilled into,
+            // render the corresponding full-screen drill view instead of
+            // the Dashboard grid.  Esc (handled in CatchEvent below) pops
+            // the drill via FocusController::exit_drill() and the next
+            // frame falls back to dashboard_view->render().
+            if (current_tab == 0 &&
+                focus_.level() == tf::views::FocusLevel::Drill) {
+                const std::string entity_id =
+                    data_store.entities.empty()
+                        ? std::string()
+                        : data_store.entities[current_entity].id;
+                switch (focus_.drilled_widget()) {
+                    case tf::views::WidgetId::NetWorth: {
+                        tf::views::drills::Drill_NetWorth d(
+                            data_store, entity_id);
+                        return d.render();
+                    }
+                    case tf::views::WidgetId::ShovelScore: {
+                        // The drill needs current + previous YYYY-MM
+                        // bucket keys; we derive prev_month with the
+                        // same scheme DashboardView::month_offset uses.
+                        std::string prev = month;
+                        if (prev.size() >= 7) {
+                            int year = std::stoi(prev.substr(0, 4));
+                            int mon  = std::stoi(prev.substr(5, 2)) - 1;
+                            if (mon < 1) { mon = 12; year -= 1; }
+                            char buf[8];
+                            std::snprintf(buf, sizeof(buf),
+                                          "%04d-%02d", year, mon);
+                            prev = buf;
+                        }
+                        tf::views::drills::Drill_ShovelScore d(
+                            data_store, month, prev);
+                        return d.render();
+                    }
+                    // v0.3-3 wires SyncStatus / ShovelIntelligence /
+                    // CategoryTrends.  For now an unrecognised drill
+                    // gracefully falls back to the Dashboard render.
+                    default:
+                        break;
+                }
+            }
             switch (current_tab) {
                 case 0: return dashboard_view->render(month, &focus_);
                 case 1: return accounts_view->render();
@@ -766,6 +810,24 @@ int main(int argc, char** argv) {
         // documents this Dashboard-only carve-out.
         // -----------------------------------------------------------------
         if (app.current_tab == 0) {
+            // Task v0.3-2: Enter on a focused widget drills into it.
+            // Routed here BEFORE FocusController::handle_key() because
+            // the controller does not own Enter semantics — only the
+            // App knows which WidgetId is currently focused and whether
+            // a drill view exists for it.
+            //
+            // Currently only NetWorth and ShovelScore have drill
+            // implementations; Enter on the other three widgets is a
+            // silent no-op until v0.3-3 lands their drills.
+            if (event == Event::Return &&
+                app.focus_.level() == tf::views::FocusLevel::Widget) {
+                const tf::views::WidgetId w = app.focus_.focused_widget();
+                if (w == tf::views::WidgetId::NetWorth ||
+                    w == tf::views::WidgetId::ShovelScore) {
+                    app.focus_.enter_drill(w);
+                }
+                return true;
+            }
             if (app.focus_.handle_key(event)) {
                 return true;
             }

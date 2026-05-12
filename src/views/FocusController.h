@@ -19,11 +19,13 @@
 // focus state in one place and makes it trivially testable with no FTXUI
 // instance involved (see tests/test_focus_controller.cpp).
 //
-// SCOPE — Task v0.3-1
+// SCOPE — Task v0.3-1 / v0.3-2
 //   - Dashboard <-> Widget transitions via Tab / Shift-Tab / hjkl / arrows.
-//   - Esc collapses Widget -> Dashboard; Esc at Dashboard is a no-op.
-//   - Drill and Modal levels are declared but inert this task; v0.3-2/4
-//     wire them in.
+//   - Esc collapses Drill -> Widget -> Dashboard; Esc at Dashboard is a
+//     no-op.
+//   - Drill level: enter_drill(WidgetId) / exit_drill() / drilled_widget()
+//     are exercised by Task v0.3-2 (drill views for net_worth +
+//     shovel_score).  Modal stays inert until v0.3-4.
 //   - context_hints() returns empty for now; v0.3-5 populates per-focus
 //     status-bar hints.
 //
@@ -73,7 +75,10 @@ enum class WidgetId : int {
 enum class FocusLevel : int {
     Dashboard = 0,  // No widget focused; Tab/Shift-Tab enter the first/last.
     Widget    = 1,  // One widget focused; arrows/hjkl move between widgets.
-    Drill     = 2,  // Reserved for v0.3-2/3 (no behavior here).
+    Drill     = 2,  // Drill view active (full-screen replacement).  Esc
+                    // pops back to Widget level on the same widget.
+                    // Task v0.3-2 wires this for NetWorth + ShovelScore;
+                    // v0.3-3 adds the remaining three.
     Modal     = 3,  // Reserved for v0.3-4 (no behavior here).
 };
 
@@ -125,6 +130,25 @@ public:
     // a given panel should render in its focused style.
     bool is_widget_focused(WidgetId w) const noexcept;
 
+    // ---------------------------------------------------------------
+    // Drill-level transitions (Task v0.3-2).
+    // ---------------------------------------------------------------
+    // enter_drill(w) takes the controller from FocusLevel::Widget
+    // (focused on w) into FocusLevel::Drill and remembers w so Esc
+    // can return to it.  Calling enter_drill from any other level is
+    // a no-op (returns false) — the App is expected to only invoke
+    // this when a widget is focused.
+    //
+    // exit_drill() pops back to FocusLevel::Widget on the same widget
+    // that was drilled.  Calling outside Drill level is a no-op.
+    //
+    // drilled_widget() returns the widget currently drilled into, or
+    // WidgetId::None when level() != FocusLevel::Drill.  The App reads
+    // this to pick which Drill_* view to render.
+    bool     enter_drill(WidgetId w);
+    bool     exit_drill();
+    WidgetId drilled_widget() const noexcept;
+
     // Reset to the initial state (Dashboard / None).  Called by the App
     // on view-switch so that switching from Dashboard to e.g. Accounts
     // does not leave a stale "Widget(NetWorth)" focus around to be
@@ -142,6 +166,7 @@ public:
 private:
     FocusLevel               level_;
     WidgetId                 focused_;
+    WidgetId                 drilled_ = WidgetId::None;
     std::vector<WidgetId>    back_stack_;  // capped at kMaxBackStackDepth.
 
     static constexpr std::size_t kMaxBackStackDepth = 4;
