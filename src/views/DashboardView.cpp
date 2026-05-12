@@ -319,46 +319,37 @@ ftxui::Element DashboardView::render(const std::string& current_month,
     //     the current scorer treats "growth" symmetrically with "shrink".
     //     A real model should NOT do this.  TODO(shovel-score).
     // ======================================================================
+    // Task v0.3-2: the per-ticker aggregation moved to
+    // DiscoveryService::aggregate_supplier_spend() so the Dashboard widget
+    // and the Drill_ShovelScore view share one truth.  Output is sorted
+    // desc by total_spend with an alphabetical ticker tie-breaker, which
+    // is byte-equivalent to the previous inline (map-ordered) iteration
+    // followed by std::sort.
     auto& discovery = DiscoveryService::instance();
+    const auto supplier_rows = discovery.aggregate_supplier_spend(
+        data_store_.transactions, current_month, prev_month);
 
-    std::map<std::string, double> ticker_total;       // lifetime absolute spend
-    std::map<std::string, double> ticker_cur_month;   // current-month absolute spend
-    std::map<std::string, double> ticker_prev_month;  // prev-month absolute spend
-
-    for (const auto& tx : data_store_.transactions) {
-        auto ticker = discovery.mapToSupplier(tx.description);
-        if (!ticker) continue;
-        if (tx.amount >= 0) continue;  // expenses only
-        const double abs_amt = std::abs(tx.amount);
-        ticker_total[*ticker] += abs_amt;
-        const std::string ym = tx.date.substr(0, 7);
-        if (ym == current_month) ticker_cur_month[*ticker]  += abs_amt;
-        else if (ym == prev_month) ticker_prev_month[*ticker] += abs_amt;
-    }
-
+    // Adapt service rows to the widget POD.  The widget only wants
+    // ticker / amount / percent_change; total_spend in the service row
+    // already equals the lifetime "amount" the widget rendered before.
     std::vector<tf::widgets::SupplierSpend> suppliers;
+    suppliers.reserve(supplier_rows.size());
     std::vector<double> mom_velocities;
-    for (const auto& [ticker, total] : ticker_total) {
-        const double cur  = ticker_cur_month[ticker];
-        const double prev = ticker_prev_month[ticker];
-        const double pct = (prev > 0.0) ? ((cur - prev) / prev) * 100.0
-                                        : (cur > 0.0 ? 100.0 : 0.0);
+    mom_velocities.reserve(supplier_rows.size());
+    double total_shovel_spend = 0.0;
+    for (const auto& row : supplier_rows) {
         tf::widgets::SupplierSpend ss;
-        ss.ticker = ticker;
-        ss.amount = total;
-        ss.percent_change = pct;
-        suppliers.push_back(ss);
-        mom_velocities.push_back(std::abs(pct));
+        ss.ticker         = row.ticker;
+        ss.amount         = row.total_spend;
+        ss.percent_change = row.percent_change;
+        suppliers.push_back(std::move(ss));
+        mom_velocities.push_back(std::abs(row.percent_change));
+        total_shovel_spend += row.total_spend;
     }
-    // Sort by absolute spend desc for display (largest shovels first).
-    std::sort(suppliers.begin(), suppliers.end(),
-              [](const auto& a, const auto& b) { return a.amount > b.amount; });
 
     Element shovel_intel_panel =
         ShovelIntelligenceRenderer(suppliers, is_focused(WidgetId::ShovelIntelligence));
 
-    double total_shovel_spend = 0.0;
-    for (const auto& [_, t] : ticker_total) total_shovel_spend += t;
     const double shovel_score_value = compute_shovel_score(mom_velocities);
     Element shovel_score_panel =
         ShovelScoreRenderer(shovel_score_value,

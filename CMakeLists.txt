@@ -1668,6 +1668,41 @@ target_link_libraries(DiscoveryMerchantVelocityTests PRIVATE
 add_test(NAME DiscoveryMerchantVelocityTests COMMAND DiscoveryMerchantVelocityTests)
 
 # --------------------------------------------------------------------------
+# DiscoverySupplierSpendTests (Task v0.3-2)
+# Locks in the contract of DiscoveryService::aggregate_supplier_spend(),
+# the per-supplier aggregator extracted from DashboardView.cpp.  Pure
+# unit tests; no fixture files required (uses the hardcoded fallback
+# supplier rules just like DiscoveryMerchantVelocityTests).  Run with
+# WORKING_DIRECTORY = source dir so DiscoveryService's auto-load of
+# data/supplier_map.json (if present) doesn't surprise the assertions.
+# --------------------------------------------------------------------------
+add_executable(DiscoverySupplierSpendTests
+  tests/test_discovery_supplier_spend.cpp
+  src/services/DiscoveryService.cpp
+)
+tf_register_first_party(DiscoverySupplierSpendTests)
+
+if(MSVC)
+  target_compile_options(DiscoverySupplierSpendTests PRIVATE /MT)
+endif()
+
+target_include_directories(DiscoverySupplierSpendTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(DiscoverySupplierSpendTests PRIVATE
+  gtest
+  gtest_main
+  nlohmann_json::nlohmann_json
+)
+
+add_test(
+  NAME DiscoverySupplierSpendTests
+  COMMAND DiscoverySupplierSpendTests
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# --------------------------------------------------------------------------
 # SupplierMapEndpointTests
 # Integration test for GET /supplier-map. Boots TerminalFinanceServer on
 # port 19846 (distinct from data-endpoint tests' 19845), enrolls a user,

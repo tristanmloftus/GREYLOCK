@@ -59,6 +59,42 @@ struct VelocityResult {
     double percent_change;            /*!< MoM percentage change */
 };
 
+namespace tf::services {
+
+/*!
+ * Per-supplier spend aggregation used by both the Dashboard (top-N supplier
+ * list) and the Shovel Score drill (full breakdown panel).  Promoted from
+ * DashboardView.cpp's inline aggregation in Task v0.3-2 so the drill view
+ * and the widget render off the same numbers.
+ *
+ * FIELDS
+ *   ticker           Public-market ticker symbol ("NVDA", "AMZN"); the value
+ *                    returned by DiscoveryService::mapToSupplier().  Empty
+ *                    strings (e.g. USPS) are filtered out by the aggregator.
+ *   total_spend      Lifetime absolute-value spend across every detected
+ *                    expense transaction for this ticker.  Always >= 0.
+ *   current_spend    Absolute-value spend in `current_month` ("YYYY-MM").
+ *   previous_spend   Absolute-value spend in `previous_month` ("YYYY-MM").
+ *   percent_change   Signed MoM percent change. ((cur - prev) / prev) * 100
+ *                    when prev > 0; 100.0 when prev == 0 and cur > 0 (the
+ *                    v0.1 first-month sentinel); 0.0 when both are zero.
+ *
+ * SORT ORDER
+ *   aggregate_supplier_spend() returns the vector sorted DESCENDING by
+ *   total_spend (largest shovel first) and TRUNCATED to the top 10.  This
+ *   matches the v0.2 inline behavior in DashboardView::render() that
+ *   Task v0.3-2 extracted verbatim.
+ */
+struct SupplierSpend {
+    std::string ticker;
+    double      total_spend;
+    double      current_spend;
+    double      previous_spend;
+    double      percent_change;
+};
+
+}  // namespace tf::services
+
 /*!
  * @class DiscoveryService
  * @brief Singleton service that cross-references transaction descriptions
@@ -122,6 +158,45 @@ public:
         const std::vector<Category>& categories,
         const std::string& current_month_prefix,   // YYYY-MM
         const std::string& previous_month_prefix   // YYYY-MM
+    ) const;
+
+    /*!
+     * @brief Aggregate per-supplier expense spend across a transaction set.
+     *
+     * Extracted from the inline aggregation in DashboardView.cpp (commit
+     * pre-c0fd7db lines 322-355) in Task v0.3-2 so the Dashboard and the
+     * Shovel-Score drill view render off the same numbers.
+     *
+     * SEMANTICS (preserved byte-for-byte from the inline version)
+     *   - Only negative-amount transactions count (expenses).  Income and
+     *     refunds to a shovel-mapped ticker are filtered out.
+     *   - tx.description is fed through mapToSupplier(); unrecognised
+     *     descriptions are skipped silently.
+     *   - For each ticker we sum three running totals:
+     *       lifetime           = std::abs(tx.amount) over all matched tx
+     *       current_month spend = sum where tx.date.substr(0,7) == current_month
+     *       previous_month spend = sum where tx.date.substr(0,7) == previous_month
+     *   - percent_change uses the same first-month sentinel as the rest of
+     *     the codebase: 100.0 when prev == 0 and cur > 0; 0.0 when both
+     *     are zero; otherwise ((cur - prev) / prev) * 100.
+     *
+     * SORT
+     *   The returned vector is sorted DESCENDING by total_spend (largest
+     *   shovel first), with ties broken alphabetically by ticker for
+     *   deterministic ordering.  No truncation: callers that want a top-N
+     *   slice (e.g. the Shovel-Score drill view's "top-10 inputs" panel)
+     *   take the first N entries themselves.  The Dashboard widget keeps
+     *   receiving the full vector, preserving v0.2 visual byte-for-byte.
+     *
+     * @param transactions    The full transaction set (DataStore::transactions).
+     * @param current_month   "YYYY-MM" bucket for the current-month column.
+     * @param previous_month  "YYYY-MM" bucket for the previous-month column.
+     * @return Up to 10 SupplierSpend rows, sorted desc by total_spend.
+     */
+    std::vector<tf::services::SupplierSpend> aggregate_supplier_spend(
+        const std::vector<Transaction>& transactions,
+        const std::string& current_month,
+        const std::string& previous_month
     ) const;
 
     /*!

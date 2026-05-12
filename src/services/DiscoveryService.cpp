@@ -2,9 +2,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -313,4 +316,81 @@ std::vector<VelocityResult> DiscoveryService::calculateVelocity(
     Logger::instance().debug("DiscoveryService: Calculated velocity for "
         + std::to_string(results.size()) + " categories");
     return results;
+}
+
+// ---------------------------------------------------------------------------
+// aggregate_supplier_spend — Task v0.3-2 extraction.
+// ---------------------------------------------------------------------------
+// Behavioral mirror of the pre-extraction inline aggregation in
+// DashboardView.cpp.  See the header for the per-step contract; the body
+// is intentionally line-for-line equivalent so the DashboardView refactor
+// is a no-op against the existing snapshot fixtures.
+// ---------------------------------------------------------------------------
+std::vector<tf::services::SupplierSpend> DiscoveryService::aggregate_supplier_spend(
+    const std::vector<Transaction>& transactions,
+    const std::string& current_month,
+    const std::string& previous_month
+) const {
+    // Three running totals per ticker.  Maps keep ticker order stable
+    // (lexicographic) so subsequent sort-by-spend is deterministic when
+    // two tickers tie on total_spend.
+    std::map<std::string, double> ticker_total;
+    std::map<std::string, double> ticker_cur_month;
+    std::map<std::string, double> ticker_prev_month;
+
+    for (const auto& tx : transactions) {
+        auto ticker = mapToSupplier(tx.description);
+        if (!ticker) continue;
+        if (tx.amount >= 0) continue;  // expenses only
+        const double abs_amt = std::abs(tx.amount);
+        ticker_total[*ticker] += abs_amt;
+        // tx.date is "YYYY-MM-DD"; we bucket by the first 7 chars.
+        // Defensive: short strings (e.g. corrupted fixtures) just won't
+        // match a YYYY-MM bucket and contribute only to the lifetime sum.
+        if (tx.date.size() >= 7) {
+            const std::string ym = tx.date.substr(0, 7);
+            if (ym == current_month) {
+                ticker_cur_month[*ticker]  += abs_amt;
+            } else if (ym == previous_month) {
+                ticker_prev_month[*ticker] += abs_amt;
+            }
+        }
+    }
+
+    std::vector<tf::services::SupplierSpend> rows;
+    rows.reserve(ticker_total.size());
+    for (const auto& [ticker, total] : ticker_total) {
+        const double cur  = ticker_cur_month[ticker];
+        const double prev = ticker_prev_month[ticker];
+        // Same first-month sentinel as DashboardView / VelocityResult.
+        const double pct = (prev > 0.0)
+            ? ((cur - prev) / prev) * 100.0
+            : (cur > 0.0 ? 100.0 : 0.0);
+        tf::services::SupplierSpend row;
+        row.ticker         = ticker;
+        row.total_spend    = total;
+        row.current_spend  = cur;
+        row.previous_spend = prev;
+        row.percent_change = pct;
+        rows.push_back(std::move(row));
+    }
+
+    // Sort desc by lifetime spend.  Map iteration already gave us a
+    // ticker-ascending input, so std::stable_sort over total_spend would
+    // produce a deterministic ordering; we use std::sort with an explicit
+    // ticker tie-breaker so the contract does not depend on stability.
+    std::sort(rows.begin(), rows.end(),
+              [](const tf::services::SupplierSpend& a,
+                 const tf::services::SupplierSpend& b) {
+                  if (a.total_spend != b.total_spend) {
+                      return a.total_spend > b.total_spend;
+                  }
+                  return a.ticker < b.ticker;
+              });
+
+    // NO TRUNCATION: callers slice the top-N themselves.  Preserves the
+    // Dashboard widget's v0.2 behavior byte-for-byte (it always rendered
+    // the full sorted vector).  The Drill_ShovelScore caller takes the
+    // first 10 entries to populate its "Inputs" panel.
+    return rows;
 }
