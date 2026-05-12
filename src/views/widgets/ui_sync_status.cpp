@@ -21,16 +21,15 @@
 //   - No date reformatting — last_sync is rendered as-is (the upstream
 //     "YYYY-MM-DD" string).
 //
-// COLOR DISCIPLINE (semantics for THIS widget)
-//   - Green "[+]" = institution connected and healthy.
-//   - Red   "[x]" = institution disconnected (or error state).
+// COLOR DISCIPLINE (semantics for THIS widget) — v0.3-5 migrated to kTokens
+//   - kTokens.accent_positive  "[+]" = institution connected and healthy.
+//   - kTokens.accent_negative  "[x]" = institution disconnected / error.
 //   - Bold (no color) on the institution name.
 //   - Dim on the sync_time / error message tail.
 //
-//   This widget uses the conventional green=good / red=bad mapping,
-//   in contrast to ui_category_trends and ui_shovel_intelligence where
-//   the inversion applies for expense direction.  The v0.3 redesign
-//   must keep this widget on the standard health-status semantics.
+//   This widget uses the conventional green=good / red=bad mapping.
+//   `accent_warning` (yellow) is reserved here for a future "stale sync
+//   >72h" state — not currently implemented but the spec calls for it.
 //
 // EDGE CASES
 //   - Empty statuses vector: onboarding empty state (see VISUAL).
@@ -84,7 +83,8 @@ Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& 
         for (const auto& s : statuses) {
             // Pick the icon + color from the connection state.
             const std::string status_icon = s.connected ? "[+]" : "[x]";
-            const Color status_color = s.connected ? Color::Green : Color::Red;
+            const Color status_color = s.connected ? kTokens.accent_positive
+                                                   : kTokens.accent_negative;
 
             // Assemble the trailing label per the priority order
             // documented in the file header.

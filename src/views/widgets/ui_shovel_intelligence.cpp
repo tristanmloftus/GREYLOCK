@@ -18,19 +18,14 @@
 //   - percent_change: 1-decimal fixed precision, magnitude only; sign
 //     communicated by the arrow character.
 //
-// COLOR DISCIPLINE (semantics for THIS widget — note INVERSION below)
-//   - Red ("^")  = shovel spend INCREASED MoM.
-//   - Green ("v") = shovel spend DECREASED MoM.
-//   - White ("-") = unchanged.
+// COLOR DISCIPLINE (semantics for THIS widget) — v0.3-5 migrated to kTokens
+//   - kTokens.thesis_up ("^")        = shovel spend INCREASED MoM.  Magenta:
+//                                      a shovel ticker trending up is the
+//                                      product thesis ("AI infra spend is
+//                                      the real signal"), not a warning.
+//   - kTokens.accent_positive ("v") = shovel spend DECREASED MoM.
+//   - kTokens.fg_dim ("-")          = unchanged.
 //   - Bold (no color) on ticker; dim on amount / "% MoM" suffix.
-//
-//   This matches ui_category_trends' convention (spending more = red),
-//   NOT stock-market convention (price up = green).  The widget is
-//   reporting EXPENSE direction, not equity performance — a user who
-//   suddenly spends 50% more on cloud compute is using more shovels,
-//   which the dashboard surfaces as a red warning.  The v0.3 redesign
-//   must preserve this expense-direction semantic; do not flip to
-//   market-style coloring.
 //
 // EDGE CASES
 //   - Empty input: two dim lines (see VISUAL).  Acts as both empty state
@@ -104,16 +99,16 @@ Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>
         for (const auto& s : suppliers) {
             // Sign of percent_change drives the arrow + color; magnitude
             // is rendered with abs().  See file header COLOR DISCIPLINE
-            // for why "+" growth is red here (expense direction, not
-            // equity performance).
+            // for why "+" growth uses `thesis_up` (the shovel-spend-up =
+            // product thesis = interesting / not bad).
             std::string direction;
-            Color change_color = Color::White;
+            Color change_color = kTokens.fg_dim;
             if (s.percent_change > 0) {
                 direction = "^";
-                change_color = Color::Red;
+                change_color = kTokens.thesis_up;
             } else if (s.percent_change < 0) {
                 direction = "v";
-                change_color = Color::Green;
+                change_color = kTokens.accent_positive;
             } else {
                 direction = "-";
             }

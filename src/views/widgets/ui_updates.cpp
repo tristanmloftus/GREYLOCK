@@ -16,14 +16,15 @@
 //   - No currency, no percentages — this widget shows discovery output,
 //     not financial figures.
 //
-// COLOR DISCIPLINE
+// COLOR DISCIPLINE — v0.3-5 migrated to kTokens
 //   - Header: bold (default color).
-//   - Body rows: default color (no semantic coloring).
-//   - Empty-state line: dim.
-//   Because this widget is informational-only (no actionable
-//   good/bad state) it does not use the dashboard's red/green palette.
-//   The v0.3 redesign should keep this widget neutral; if a future
-//   variant needs to signal "new this sync" vs. "previously seen",
+//   - Ticker symbol:     kTokens.fg_emphasized (the supplier name — the
+//                                                primary data on each row).
+//   - Separator + body:  kTokens.fg_dim         (neutral metadata).
+//   - Empty-state line:  dim.
+//   Because this widget is informational-only (no actionable good/bad
+//   state) it does not use the red/green/magenta semantic accents.  If a
+//   future variant needs to signal "new this sync" vs. "previously seen",
 //   introduce a dedicated badge rather than recoloring the rows.
 //
 // EDGE CASES
@@ -38,6 +39,8 @@
 // ---------------------------------------------------------------------------
 
 #include "ui_updates.h"
+
+#include "../ViewCommon.h"
 
 namespace ftxui {
 
@@ -72,8 +75,14 @@ Element SupplierTickerDisplayRenderer(
         rows.push_back(text("  No suppliers discovered yet.") | dim);
     } else {
         for (const auto& [ticker, description] : suppliers) {
-            const std::string row = "  " + ticker + "  |  " + description;
-            rows.push_back(text(row));
+            // Ticker = supplier name = fg_emphasized; description and
+            // separator are neutral metadata = fg_dim.
+            rows.push_back(hbox({
+                text("  "),
+                text(ticker) | color(kTokens.fg_emphasized),
+                text("  |  ") | color(kTokens.fg_dim),
+                text(description) | color(kTokens.fg_dim),
+            }));
         }
     }
 

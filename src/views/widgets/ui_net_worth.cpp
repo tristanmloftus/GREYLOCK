@@ -13,16 +13,15 @@
 //     matching the v0.1 dashboard's accountant style.
 //   - No thousands separators in v0.2 — preserved verbatim from v0.1.
 //
-// COLOR DISCIPLINE (semantics this widget assigns)
-//   - Green   = positive net worth (you own more than you owe).
-//   - Red     = negative net worth, OR a negative credit-card balance
-//               (debt currently held on the card).
-//   - Default (terminal foreground) = breakdown rows.
-//   - Dim     = field labels ("Checking:", "Savings:", ...).
-//   The v0.3 UX redesign will replace these with a semantic palette
-//   (success / warning / danger / muted).  Preserve the intent: net-worth
-//   coloring is a quick health glance; credit-row red is a debt-present
-//   indicator only — it should NOT alarm if the card is paid in full.
+// COLOR DISCIPLINE (semantics this widget assigns) — v0.3-5 migrated to kTokens
+//   - kTokens.accent_positive  = positive net worth (you own more than you owe).
+//   - kTokens.accent_negative  = negative net worth, OR a negative credit-card
+//                                balance (debt currently held on the card).
+//   - Default (kTokens.fg_default) = breakdown rows.
+//   - Dim (FTXUI |dim modifier)    = field labels ("Checking:", "Savings:", ...).
+//   Preserve the intent: net-worth coloring is a quick health glance;
+//   credit-row red is a debt-present indicator only — it should NOT alarm
+//   if the card is paid in full.
 //
 // EDGE CASES
 //   - All zeros: renders cleanly as "$0.00" everywhere (no special path).
@@ -100,18 +99,19 @@ Element NetWorthBreakdownRenderer(double checking, double savings, double credit
     rows.push_back(title);
     rows.push_back(separator());
 
-    // Headline total: green if non-negative, red if negative.
-    const Color net_color = net_worth >= 0 ? Color::Green : Color::Red;
+    // Headline total: accent_positive if non-negative, accent_negative if negative.
+    const Color net_color = net_worth >= 0 ? kTokens.accent_positive : kTokens.accent_negative;
     rows.push_back(text(format_currency(net_worth)) | bold | color(net_color));
     rows.push_back(text(""));
 
     rows.push_back(hbox({ text("Checking:   ") | dim, text(format_currency(checking)) }));
     rows.push_back(hbox({ text("Savings:    ") | dim, text(format_currency(savings)) }));
-    // Credit balances are negative liabilities; color in red only when balance < 0.
-    // (A positive credit value means credit-on-file / overpayment, which is
-    // not a debt and therefore not styled as a warning.)
+    // Credit balances are negative liabilities; color as accent_negative
+    // only when balance < 0.  (A positive credit value means credit-on-file
+    // / overpayment, which is not a debt and therefore not styled as a
+    // warning.)
     Element credit_value = text(format_currency(credit));
-    if (credit < 0) credit_value = credit_value | color(Color::Red);
+    if (credit < 0) credit_value = credit_value | color(kTokens.accent_negative);
     rows.push_back(hbox({ text("Credit:     ") | dim, credit_value }));
     rows.push_back(hbox({ text("Investment: ") | dim, text(format_currency(investment)) }));
 

@@ -16,19 +16,20 @@
 //     the arrow character, NOT by a leading minus.  Magnitude is rendered
 //     with std::abs() so "v 3.1%" reads "down 3.1%".
 //
-// COLOR DISCIPLINE (semantics for THIS widget)
-//   - Red ("^")  = spending increased month-over-month.  Treated as a
-//                  warning indicator: the user is spending MORE in this
-//                  category than last month.
-//   - Green ("v") = spending decreased month-over-month.  Treated as a
-//                  positive indicator (good news, spending less).
-//   - White ("-") = unchanged (percent_change == 0).
-//   Note this is the OPPOSITE of typical stock-market color semantics
-//   (where green = up).  This is intentional for an expense-tracking
-//   context: spending more is bad, spending less is good.  The v0.3 UX
-//   redesign must preserve this inversion when introducing the semantic
-//   palette — do NOT collapse this widget's coloring into a generic
-//   "up=green / down=red" rule.
+// COLOR DISCIPLINE (semantics for THIS widget) — v0.3-5 migrated to kTokens
+//   - kTokens.thesis_up ("^")        = spending increased month-over-month.
+//                                      Magenta: per the v0.3 redesign, a
+//                                      category trending UP is not "bad"
+//                                      — it is "interesting / thesis-
+//                                      confirming" (where is the money
+//                                      actually going).  The owner is
+//                                      welcome to flip this back to
+//                                      accent_warning in v0.4 if "spending
+//                                      up = bad" becomes the operative
+//                                      framing again.
+//   - kTokens.accent_positive ("v") = spending decreased MoM (good news /
+//                                      savings — green/teal).
+//   - kTokens.fg_dim ("-")          = unchanged (percent_change == 0).
 //
 // EDGE CASES
 //   - Empty input: shows the dim "No transactions this month." placeholder
@@ -105,15 +106,16 @@ Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTr
             // Arrow + color encode the SIGN of percent_change; the
             // numeric magnitude is always rendered as a positive number.
             // See the "COLOR DISCIPLINE" note in the file header for why
-            // spend-up is red and spend-down is green here.
+            // spend-up is `thesis_up` (magenta) and spend-down is
+            // `accent_positive` (savings = good = green/teal) here.
             std::string direction;
-            Color change_color = Color::White;
+            Color change_color = kTokens.fg_dim;
             if (t.percent_change > 0) {
                 direction = "^";
-                change_color = Color::Red;
+                change_color = kTokens.thesis_up;
             } else if (t.percent_change < 0) {
                 direction = "v";
-                change_color = Color::Green;
+                change_color = kTokens.accent_positive;
             } else {
                 direction = "-";
             }

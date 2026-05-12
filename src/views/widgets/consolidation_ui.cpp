@@ -26,15 +26,15 @@
 //   - Status text: bracket-wrapped words ("[Connected]" / "[Disconnected]")
 //     intentionally ASCII for terminal compatibility.
 //
-// COLOR DISCIPLINE (semantics for THESE widgets)
+// COLOR DISCIPLINE (semantics for THESE widgets) — v0.3-5 migrated to kTokens
 //   BankConnectionStatusRenderer:
-//     - Green "[Connected]"    = healthy.
-//     - Red   "[Disconnected]" = unhealthy.
+//     - kTokens.accent_positive  "[Connected]"    = healthy.
+//     - kTokens.accent_negative  "[Disconnected]" = unhealthy.
 //     Same standard health-status semantics as ui_sync_status.
 //
 //   ConsolidatedNetWorthRenderer:
-//     - Green headline = net worth >= 0.
-//     - Red   headline = net worth < 0.
+//     - kTokens.accent_positive headline = net worth >= 0.
+//     - kTokens.accent_negative headline = net worth < 0.
 //     - Breakdown rows: dim label, default-color value.  Notably this
 //       widget does NOT red-color a negative credit balance (unlike
 //       ui_net_worth which does).  Preserved verbatim from the v0.1
@@ -54,6 +54,8 @@
 
 #include <iomanip>
 #include <sstream>
+
+#include "../ViewCommon.h"
 
 namespace ftxui {
 
@@ -101,7 +103,8 @@ Element BankConnectionStatusRenderer(const std::vector<tf::widgets::AccountConne
             const std::string last_sync = acc.last_sync.empty() ? "Never" : acc.last_sync;
 
             Element row = hbox({
-                text(status) | color(acc.connected ? Color::Green : Color::Red),
+                text(status) | color(acc.connected ? kTokens.accent_positive
+                                                   : kTokens.accent_negative),
                 text(" "),
                 text(acc.institution) | bold,
                 text(" - ") | dim,
@@ -144,8 +147,10 @@ Element ConsolidatedNetWorthRenderer(double net_worth, double checking, double s
     rows.push_back(text("Consolidated Net Worth") | bold);
     rows.push_back(separator());
 
-    // Headline: green when net worth is non-negative, red otherwise.
-    rows.push_back(text("$" + format_amount(net_worth)) | bold | color(net_worth >= 0 ? Color::Green : Color::Red));
+    // Headline: accent_positive when net worth is non-negative, accent_negative otherwise.
+    rows.push_back(text("$" + format_amount(net_worth)) | bold
+                   | color(net_worth >= 0 ? kTokens.accent_positive
+                                          : kTokens.accent_negative));
     rows.push_back(text(""));
 
     rows.push_back(hbox({ text("Checking:   ") | dim, text("$" + format_amount(checking)) }));

@@ -14,25 +14,30 @@
 //   - total_shovel_spend: 2-decimal precision, leading "$".
 //   - supplier_count: rendered via std::to_string (no formatting).
 //
-// COLOR DISCIPLINE + TIER LABELS (semantics for THIS widget)
+// COLOR DISCIPLINE + TIER LABELS (semantics for THIS widget) — v0.3-5 migrated
 //   The score-to-tier mapping is the v0.2 marketing taxonomy:
-//     score >= 80 -> "AI POWERHOUSE"   (Cyan)
-//     score >= 60 -> "EARLY ADOPTER"   (Green)
-//     score >= 40 -> "BUILDING STACK"  (Yellow)
-//     score >= 20 -> "GETTING STARTED" (Yellow)
-//     score <  20 -> "WAITING TO DIG"  (GrayLight)
+//     score >= 80 -> "AI POWERHOUSE"   (kTokens.accent_info,     cyan)
+//     score >= 60 -> "EARLY ADOPTER"   (kTokens.accent_positive, green)
+//     score >= 40 -> "BUILDING STACK"  (kTokens.accent_warning,  yellow)
+//     score >= 20 -> "GETTING STARTED" (kTokens.accent_warning,  yellow)
+//     score <  20 -> "WAITING TO DIG"  (Color::GrayLight, no semantic token
+//                                       maps to GrayLight; this is a neutral
+//                                       "not engaged" indicator and is
+//                                       intentionally distinct from fg_dim
+//                                       (GrayDark) used for metadata).
 //
 //   Color is informational (a glance-level "where am I"), NOT a
 //   warning/error indicator: gray-light means "not engaged with AI
-//   infrastructure" and is neutral, not bad.  Cyan at the top end is
-//   intentionally distinct from green elsewhere in the dashboard so
-//   the headline score does not blur into the net-worth green.
+//   infrastructure" and is neutral, not bad.
+//
+//   SEMANTIC NOTE (v0.3-5): `accent_info` (Cyan) is shared with
+//   timestamp-style metadata elsewhere; here it carries a different
+//   meaning (top-tier celebratory).  Documented for the integration
+//   manager.  Reconciliation candidate for v0.4.
 //
 //   Thresholds (80/60/40/20) are unanchored magic numbers — they were
 //   chosen for demo readability, not because the underlying score is
-//   calibrated.  The v0.3 redesign should re-anchor them to a real
-//   distribution once the score formula stops being a stop-gap.
-//   TODO(shovel-score).
+//   calibrated.  TODO(shovel-score) re-anchor when the scorer is real.
 //
 // EDGE CASES
 //   - score == 0:           "WAITING TO DIG" tier rendered.
@@ -111,18 +116,20 @@ Element ShovelScoreRenderer(double score, int supplier_count, double total_shove
     Color score_color;
     if (score >= 80) {
         label = "AI POWERHOUSE";
-        score_color = Color::Cyan;
+        score_color = kTokens.accent_info;
     } else if (score >= 60) {
         label = "EARLY ADOPTER";
-        score_color = Color::Green;
+        score_color = kTokens.accent_positive;
     } else if (score >= 40) {
         label = "BUILDING STACK";
-        score_color = Color::Yellow;
+        score_color = kTokens.accent_warning;
     } else if (score >= 20) {
         label = "GETTING STARTED";
-        score_color = Color::Yellow;
+        score_color = kTokens.accent_warning;
     } else {
         label = "WAITING TO DIG";
+        // No semantic token maps to GrayLight; "neutral / not engaged"
+        // is distinct from `fg_dim` (GrayDark) which is metadata.
         score_color = Color::GrayLight;
     }
 

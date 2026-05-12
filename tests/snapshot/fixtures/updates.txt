@@ -1,9 +1,9 @@
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │[1mDiscovered Suppliers (MoM Analysis)                                           [22m│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│  NVDA  |  GPU infrastructure                                                 │
-│  AMZN  |  AWS compute                                                        │
-│  MSFT  |  Azure compute                                                      │
+│  [97m[49mNVDA[90m[49m  |  GPU infrastructure[39m[49m                                                 │
+│  [97m[49mAMZN[90m[49m  |  AWS compute[39m[49m                                                        │
+│  [97m[49mMSFT[90m[49m  |  Azure compute[39m[49m                                                      │
 │                                                                              │
 │                                                                              │
 │                                                                              │
