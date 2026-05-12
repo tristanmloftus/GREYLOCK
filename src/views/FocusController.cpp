@@ -165,7 +165,9 @@ WidgetId move_up(WidgetId current) {
 // ---------------------------------------------------------------------------
 FocusController::FocusController()
     : level_(FocusLevel::Dashboard),
-      focused_(WidgetId::None) {
+      focused_(WidgetId::None),
+      pre_modal_level_(FocusLevel::Dashboard),
+      pre_modal_focused_(WidgetId::None) {
     back_stack_.reserve(kMaxBackStackDepth);
 }
 
@@ -333,10 +335,42 @@ WidgetId FocusController::drilled_widget() const noexcept {
 // than retaining a stale widget focus.
 // ---------------------------------------------------------------------------
 void FocusController::reset() {
-    level_   = FocusLevel::Dashboard;
-    focused_ = WidgetId::None;
-    drilled_ = WidgetId::None;
+    level_              = FocusLevel::Dashboard;
+    focused_            = WidgetId::None;
+    drilled_            = WidgetId::None;
+    pre_modal_level_    = FocusLevel::Dashboard;
+    pre_modal_focused_  = WidgetId::None;
     back_stack_.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Modal hooks (Task v0.3-4)
+// ---------------------------------------------------------------------------
+// enter_modal stashes the current (level, focused) so exit_modal can
+// restore them exactly.  Re-entering while already in Modal is a no-op
+// (the App is responsible for single-modal-open as a UI invariant).
+//
+// While in Modal level, handle_key returns false unconditionally -- the
+// App routes events to the modal component directly via the path in
+// main.cpp.  We do not need to muddy handle_key's logic since the App
+// checks is_modal_open() before calling it.
+// ---------------------------------------------------------------------------
+void FocusController::enter_modal() {
+    if (level_ == FocusLevel::Modal) return;
+    pre_modal_level_   = level_;
+    pre_modal_focused_ = focused_;
+    level_   = FocusLevel::Modal;
+    focused_ = WidgetId::None;
+}
+
+void FocusController::exit_modal() {
+    if (level_ != FocusLevel::Modal) return;
+    level_   = pre_modal_level_;
+    focused_ = pre_modal_focused_;
+}
+
+bool FocusController::is_modal_open() const noexcept {
+    return level_ == FocusLevel::Modal;
 }
 
 // ---------------------------------------------------------------------------

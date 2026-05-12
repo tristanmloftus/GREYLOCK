@@ -1942,20 +1942,52 @@ add_test(NAME FuzzyMatchTests COMMAND FuzzyMatchTests)
 
 # --------------------------------------------------------------------------
 # CommandPaletteTests (Task v0.3-4)
-# Tests the CommandRegistry (and, once added, the CommandPalette modal).
-# Links only the registry source + fuzzy_match.h; no FTXUI/DataStore deps.
+# Tests the CommandRegistry and the CommandPalette modal component.  Links
+# the registry, CommandPalette, and HelpOverlay sources plus FTXUI for
+# Event/Element types.  No DataStore or BackendClient deps.
 # See tests/test_command_palette.cpp for the cases.
 # --------------------------------------------------------------------------
 add_executable(CommandPaletteTests
   tests/test_command_palette.cpp
   src/utils/CommandRegistry.cpp
+  src/views/CommandPalette.cpp
+  src/views/HelpOverlay.cpp
 )
 tf_register_first_party(CommandPaletteTests)
 target_link_libraries(CommandPaletteTests PRIVATE
   gtest
   gtest_main
+  ftxui::dom
+  ftxui::screen
+  ftxui::component
 )
 add_test(NAME CommandPaletteTests COMMAND CommandPaletteTests)
+
+# --------------------------------------------------------------------------
+# ModalSnapshotTests (Task v0.3-4)
+# Snapshot tests for the CommandPalette and HelpOverlay overlays at 120x40.
+# Fixtures live in tests/snapshot/fixtures/command_palette_open.txt and
+# help_overlay.txt; refresh with TF_UPDATE_SNAPSHOTS=1.
+# --------------------------------------------------------------------------
+add_executable(ModalSnapshotTests
+  tests/test_modal_snapshot.cpp
+  src/utils/CommandRegistry.cpp
+  src/views/CommandPalette.cpp
+  src/views/HelpOverlay.cpp
+)
+tf_register_first_party(ModalSnapshotTests)
+target_link_libraries(ModalSnapshotTests PRIVATE
+  gtest
+  gtest_main
+  ftxui::dom
+  ftxui::screen
+  ftxui::component
+)
+add_test(
+  NAME ModalSnapshotTests
+  COMMAND ModalSnapshotTests
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 # ==========================================================================
 # Phase 6: TF_COVERAGE — apply coverage flags + `coverage` custom target.

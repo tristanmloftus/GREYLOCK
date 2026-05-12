@@ -155,6 +155,28 @@ public:
     // surprising on return.
     void reset();
 
+    // ---------------------------------------------------------------------
+    // Modal hooks (Task v0.3-4).
+    // ---------------------------------------------------------------------
+    // The App calls enter_modal() when it opens a modal overlay (command
+    // palette via ":", help overlay via "?") and exit_modal() when the
+    // overlay closes (Esc, or successful command dispatch).
+    //
+    // The controller stashes the pre-modal (level, focused_widget) pair
+    // so exit_modal() restores it exactly.  Two-level nesting is NOT
+    // supported -- entering a modal while another is open is treated as
+    // a no-op (the controller stays in its already-modal state).  In
+    // practice the App enforces single-modal-open as a UI invariant.
+    //
+    // Modal-level events (typing into the palette, j/k to move selection,
+    // Esc to dismiss) are routed by the modal component itself, NOT by
+    // the FocusController -- so handle_key() in this controller is a
+    // no-op while is_modal_open() is true.  The App's event loop checks
+    // is_modal_open() first and dispatches to the modal directly.
+    void enter_modal();
+    void exit_modal();
+    bool is_modal_open() const noexcept;
+
     // Status-bar contextual hints for the current focus state.
     //
     // Returns empty in Task v0.3-1; v0.3-5 populates per-focus hint
@@ -168,6 +190,13 @@ private:
     WidgetId                 focused_;
     WidgetId                 drilled_ = WidgetId::None;
     std::vector<WidgetId>    back_stack_;  // capped at kMaxBackStackDepth.
+
+    // Pre-modal state stash.  Populated by enter_modal() and consumed by
+    // exit_modal().  Defaulted to Dashboard/None for the first
+    // enter-then-exit cycle so a modal opened directly from the initial
+    // app state restores cleanly.
+    FocusLevel               pre_modal_level_;
+    WidgetId                 pre_modal_focused_;
 
     static constexpr std::size_t kMaxBackStackDepth = 4;
 };

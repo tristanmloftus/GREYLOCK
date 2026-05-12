@@ -1,0 +1,116 @@
+// ---------------------------------------------------------------------------
+// HelpOverlay.cpp — static keybinding cheatsheet (Task v0.3-4).
+// ---------------------------------------------------------------------------
+// See HelpOverlay.h for the contract.  Content reproduces the §3f
+// keybinding map mockup; v0.3-5 will tie the lower section to the
+// focused widget's hints.
+
+#include "HelpOverlay.h"
+
+#include "ViewCommon.h"
+
+#include <ftxui/dom/elements.hpp>
+
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace tf::views {
+
+namespace {
+
+// Single keybinding entry rendered as "key  description".  Width tuned
+// to the 120x40 fixture canvas (the bordered box is 52 chars wide).
+struct Binding {
+    const char* key;
+    const char* description;
+};
+
+// Static cheat sheet.  Order matches the v0.3-4 task brief's mockup.
+constexpr Binding kBindings[] = {
+    { "Tab",        "Switch view forward"            },
+    { "Shift-Tab",  "Switch view backward"           },
+    { "1-2",        "Switch entity"                  },
+    { "h j k l",    "Move focus left / down / up / right" },
+    { "Enter",      "Drill into focused widget"      },
+    { "Esc",        "Back / close"                    },
+    { ":",          "Command palette"                },
+    { "?",          "This help"                      },
+    { "q",          "Quit"                           },
+};
+
+constexpr int kOverlayWidth = 52;
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+HelpOverlay::HelpOverlay()
+    : open_(false) {
+}
+
+void HelpOverlay::open()       { open_ = true;  }
+void HelpOverlay::close()      { open_ = false; }
+bool HelpOverlay::is_open() const noexcept { return open_; }
+
+// ---------------------------------------------------------------------------
+// handle_key — Esc closes; every other key is consumed so the global
+// handler chain doesn't fire under the open overlay.
+// ---------------------------------------------------------------------------
+bool HelpOverlay::handle_key(const ftxui::Event& event) {
+    using ftxui::Event;
+    if (!open_) return false;
+
+    if (event == Event::Escape) {
+        close();
+        return true;
+    }
+    // Swallow everything else.  The user sees the cheat sheet; stray
+    // typing must not slip past it into the App.
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// render — bordered cheat sheet, two-column body, centered footer hint.
+// Caller (App::render) is responsible for centering the returned
+// element on the screen via dbox + filler().
+// ---------------------------------------------------------------------------
+ftxui::Element HelpOverlay::render() const {
+    using namespace ftxui;
+    if (!open_) return text("");
+
+    // Header strip ("─── KEYBINDINGS ───").  We render it as a plain
+    // text line above the body; the border style around the whole box
+    // is rounded.
+    Element header = text(" KEYBINDINGS ") |
+                     center |
+                     color(kTokens.fg_emphasized) |
+                     bold;
+
+    Elements rows;
+    rows.reserve(sizeof(kBindings) / sizeof(kBindings[0]) + 2);
+    rows.push_back(text(""));   // blank line under header
+    for (const auto& b : kBindings) {
+        Element row = hbox({
+            text(std::string("  ") + b.key) |
+                color(kTokens.fg_emphasized) |
+                size(WIDTH, EQUAL, 14),
+            text(b.description) | color(kTokens.fg_default),
+        });
+        rows.push_back(row);
+    }
+    rows.push_back(text(""));
+    rows.push_back(text("[Esc] Close") | center | color(kTokens.fg_dim));
+
+    Element body = vbox({
+        header,
+        separator() | color(kTokens.fg_dim),
+        vbox(std::move(rows)),
+    });
+
+    return body |
+           borderRounded |
+           color(kTokens.fg_emphasized) |
+           size(WIDTH, EQUAL, kOverlayWidth);
+}
+
+}  // namespace tf::views
