@@ -437,7 +437,7 @@ enable_testing()
 # --------------------------------------------------------------------------
 # Main executable
 # --------------------------------------------------------------------------
-add_executable(TerminalFinance src/main.cpp src/views/DashboardView.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
+add_executable(TerminalFinance src/main.cpp src/views/DashboardView.cpp src/views/FocusController.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
 tf_register_first_party(TerminalFinance)
 
 target_link_libraries(TerminalFinance PRIVATE
@@ -1741,6 +1741,25 @@ add_test(
   COMMAND WidgetSnapshotTests
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# --------------------------------------------------------------------------
+# FocusControllerTests (Task v0.3-1)
+# Pure state-machine unit tests for src/views/FocusController.cpp.  No
+# FTXUI rendering is exercised, only ftxui::Event construction; the test
+# binary links the controller + ftxui::component (for Event types) +
+# gtest.  See tests/test_focus_controller.cpp for the 12 cases.
+# --------------------------------------------------------------------------
+add_executable(FocusControllerTests
+  tests/test_focus_controller.cpp
+  src/views/FocusController.cpp
+)
+tf_register_first_party(FocusControllerTests)
+target_link_libraries(FocusControllerTests PRIVATE
+  gtest
+  gtest_main
+  ftxui::component
+)
+add_test(NAME FocusControllerTests COMMAND FocusControllerTests)
 
 # --------------------------------------------------------------------------
 # ConsolidationServiceTests (Phase 5)

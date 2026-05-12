@@ -1,0 +1,299 @@
+// ---------------------------------------------------------------------------
+// FocusController.cpp — Dashboard focus state machine (Task v0.3-1).
+// ---------------------------------------------------------------------------
+// See FocusController.h for the public contract and the higher-level
+// motivation.  This file implements the state machine, the static 2x3
+// grid table backing hjkl movement, and the wrap policy.
+//
+// WRAP POLICY (Q8 resolution recorded here)
+//   - Tab / Shift-Tab           : WRAP around declaration order.  After
+//                                  CategoryTrends, Tab returns to NetWorth;
+//                                  after NetWorth, Shift-Tab returns to
+//                                  CategoryTrends.
+//   - h / Left, l / Right       : WRAP within the focused widget's row.
+//                                  From NetWorth (row 0, col 0), `h`
+//                                  lands on SyncStatus (row 0, col 2).
+//                                  From SyncStatus, `l` returns to
+//                                  NetWorth.
+//   - j / Down, k / Up          : WRAP between the two rows (row 0 <-> row 1)
+//                                  on the SAME column.  If the target cell
+//                                  is empty (row 1 col 2), fall back to
+//                                  the leftmost populated cell in that
+//                                  target row (= ShovelIntelligence).
+//
+// Wrap was chosen over "stay put at edge" (the alternative the design
+// proposal §3a contemplated) per the Task v0.3-1 brief: less surprise
+// than dead-ends, mirrors lazygit's `]p` / `[p` cycling behavior, and
+// matches the Tab cycle so all four navigation keys behave consistently.
+//
+// EMPTY-CELL FALLBACK (Q8 confirmation)
+//   The 2x3 grid has exactly one empty cell: (row 1, col 2).  Reaching it
+//   from j/Down on SyncStatus (row 0, col 2) falls back to the leftmost
+//   populated cell on row 1, i.e. ShovelIntelligence.  The reverse
+//   direction (k/Up on ShovelIntelligence or CategoryTrends) lands on a
+//   populated cell with no fallback required.
+//
+// ---------------------------------------------------------------------------
+
+#include "FocusController.h"
+
+#include <algorithm>
+#include <array>
+
+namespace tf::views {
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// Declaration order — the Tab / Shift-Tab cycle.
+// ---------------------------------------------------------------------------
+// Order MUST match the reading-order intent (left-to-right, top-to-
+// bottom).  Indexed by the position of Tab presses from Dashboard.
+// ---------------------------------------------------------------------------
+constexpr std::array<WidgetId, 5> kTabOrder = {
+    WidgetId::NetWorth,
+    WidgetId::ShovelScore,
+    WidgetId::SyncStatus,
+    WidgetId::ShovelIntelligence,
+    WidgetId::CategoryTrends,
+};
+
+// ---------------------------------------------------------------------------
+// Grid coordinates for the 2-row x 3-col Dashboard layout.
+// ---------------------------------------------------------------------------
+// row 0 ->  NetWorth        ShovelScore       SyncStatus
+// row 1 ->  ShovelIntel     CategoryTrends    (empty)
+//
+// kGrid[r][c] holds the widget at that cell, or WidgetId::None for the
+// single empty cell.  hjkl movement consults this table; declaration-
+// order (Tab) does not.
+// ---------------------------------------------------------------------------
+constexpr int kRows = 2;
+constexpr int kCols = 3;
+
+constexpr std::array<std::array<WidgetId, kCols>, kRows> kGrid = {{
+    {WidgetId::NetWorth,           WidgetId::ShovelScore,    WidgetId::SyncStatus},
+    {WidgetId::ShovelIntelligence, WidgetId::CategoryTrends, WidgetId::None},
+}};
+
+// Find the (row, col) of a given widget.  Returns false if not on grid
+// (e.g. WidgetId::None).
+bool find_grid_position(WidgetId w, int& row, int& col) {
+    for (int r = 0; r < kRows; ++r) {
+        for (int c = 0; c < kCols; ++c) {
+            if (kGrid[r][c] == w) {
+                row = r;
+                col = c;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Return the leftmost populated WidgetId in the given row.  Used when a
+// vertical move lands on the single empty cell at (1, 2).
+WidgetId leftmost_in_row(int row) {
+    for (int c = 0; c < kCols; ++c) {
+        if (kGrid[row][c] != WidgetId::None) {
+            return kGrid[row][c];
+        }
+    }
+    // Unreachable for the current grid (every row has at least one
+    // populated cell); defensive fallback.
+    return kGrid[row][0];
+}
+
+// Find the index of `w` in kTabOrder.  Returns -1 if not found.
+int tab_index(WidgetId w) {
+    for (std::size_t i = 0; i < kTabOrder.size(); ++i) {
+        if (kTabOrder[i] == w) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// hjkl resolvers — each returns the WidgetId that should receive focus
+// after the corresponding move.  Operates on the grid model described in
+// the file header.  All four wrap; j/Down + k/Up apply the empty-cell
+// fallback when the target cell is unpopulated.
+// ---------------------------------------------------------------------------
+WidgetId move_left(WidgetId current) {
+    int r = 0, c = 0;
+    if (!find_grid_position(current, r, c)) return current;
+    // Wrap left within the row, skipping empty cells.
+    for (int step = 1; step <= kCols; ++step) {
+        const int nc = (c - step + kCols) % kCols;
+        if (kGrid[r][nc] != WidgetId::None) return kGrid[r][nc];
+    }
+    return current;
+}
+
+WidgetId move_right(WidgetId current) {
+    int r = 0, c = 0;
+    if (!find_grid_position(current, r, c)) return current;
+    for (int step = 1; step <= kCols; ++step) {
+        const int nc = (c + step) % kCols;
+        if (kGrid[r][nc] != WidgetId::None) return kGrid[r][nc];
+    }
+    return current;
+}
+
+WidgetId move_down(WidgetId current) {
+    int r = 0, c = 0;
+    if (!find_grid_position(current, r, c)) return current;
+    const int nr = (r + 1) % kRows;
+    if (kGrid[nr][c] != WidgetId::None) return kGrid[nr][c];
+    // Empty target cell: fall back to leftmost populated cell on target row.
+    return leftmost_in_row(nr);
+}
+
+WidgetId move_up(WidgetId current) {
+    int r = 0, c = 0;
+    if (!find_grid_position(current, r, c)) return current;
+    const int nr = (r - 1 + kRows) % kRows;
+    if (kGrid[nr][c] != WidgetId::None) return kGrid[nr][c];
+    return leftmost_in_row(nr);
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Constructor — initial state is Dashboard / None.  back_stack_ reserves
+// kMaxBackStackDepth (4) slots up front so push/pop in v0.3-2+ is
+// allocation-free.
+// ---------------------------------------------------------------------------
+FocusController::FocusController()
+    : level_(FocusLevel::Dashboard),
+      focused_(WidgetId::None) {
+    back_stack_.reserve(kMaxBackStackDepth);
+}
+
+// ---------------------------------------------------------------------------
+// handle_key — main dispatch.  See header for recognised events.  Returns
+// true iff the event was consumed (state changed OR a deliberate no-op).
+// ---------------------------------------------------------------------------
+bool FocusController::handle_key(const ftxui::Event& event) {
+    using ftxui::Event;
+
+    // ---------------------------------------------------------------------
+    // Esc — pop one level.  At Dashboard level Esc is an explicit no-op
+    // per Q3 of the design proposal; we still return true so the App
+    // does NOT propagate Esc to legacy handlers (where it would currently
+    // exit the app).  This gates the v0.3 quit-via-q convention.
+    // ---------------------------------------------------------------------
+    if (event == Event::Escape) {
+        if (level_ == FocusLevel::Widget) {
+            level_   = FocusLevel::Dashboard;
+            focused_ = WidgetId::None;
+            return true;
+        }
+        // Dashboard / Drill / Modal: no-op for this task.  Higher tasks
+        // will fill in Drill/Modal pops; Dashboard stays a hard no-op.
+        if (level_ == FocusLevel::Dashboard) {
+            return false;
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Tab / Shift-Tab — declaration-order cycle.
+    // ---------------------------------------------------------------------
+    if (event == Event::Tab) {
+        if (level_ == FocusLevel::Dashboard) {
+            level_   = FocusLevel::Widget;
+            focused_ = kTabOrder.front();
+            return true;
+        }
+        if (level_ == FocusLevel::Widget) {
+            const int idx = tab_index(focused_);
+            if (idx < 0) {
+                focused_ = kTabOrder.front();
+            } else {
+                focused_ = kTabOrder[(idx + 1) % kTabOrder.size()];
+            }
+            return true;
+        }
+        return false;
+    }
+    if (event == Event::TabReverse) {
+        if (level_ == FocusLevel::Dashboard) {
+            level_   = FocusLevel::Widget;
+            focused_ = kTabOrder.back();
+            return true;
+        }
+        if (level_ == FocusLevel::Widget) {
+            const int idx = tab_index(focused_);
+            const int n   = static_cast<int>(kTabOrder.size());
+            if (idx < 0) {
+                focused_ = kTabOrder.back();
+            } else {
+                focused_ = kTabOrder[(idx - 1 + n) % n];
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------------------
+    // hjkl + arrows — grid-resolved movement.  Only meaningful when a
+    // widget is already focused; from Dashboard level, hjkl/arrows are
+    // not claimed (the App's view-specific handlers see them).
+    // ---------------------------------------------------------------------
+    if (level_ != FocusLevel::Widget) return false;
+
+    if (event == Event::Character('h') || event == Event::ArrowLeft) {
+        focused_ = move_left(focused_);
+        return true;
+    }
+    if (event == Event::Character('l') || event == Event::ArrowRight) {
+        focused_ = move_right(focused_);
+        return true;
+    }
+    if (event == Event::Character('j') || event == Event::ArrowDown) {
+        focused_ = move_down(focused_);
+        return true;
+    }
+    if (event == Event::Character('k') || event == Event::ArrowUp) {
+        focused_ = move_up(focused_);
+        return true;
+    }
+
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Accessors — pure, allocation-free.
+// ---------------------------------------------------------------------------
+FocusLevel FocusController::level() const noexcept {
+    return level_;
+}
+
+WidgetId FocusController::focused_widget() const noexcept {
+    return focused_;
+}
+
+bool FocusController::is_widget_focused(WidgetId w) const noexcept {
+    return level_ == FocusLevel::Widget && focused_ == w && w != WidgetId::None;
+}
+
+// ---------------------------------------------------------------------------
+// reset — restore initial state.  Called by the App when switching away
+// from the Dashboard so a future return lands at Dashboard level rather
+// than retaining a stale widget focus.
+// ---------------------------------------------------------------------------
+void FocusController::reset() {
+    level_   = FocusLevel::Dashboard;
+    focused_ = WidgetId::None;
+    back_stack_.clear();
+}
+
+// ---------------------------------------------------------------------------
+// context_hints — stub for Task v0.3-1.  v0.3-5 fills in per-focus hints
+// read by main.cpp's status bar render.
+// ---------------------------------------------------------------------------
+std::vector<std::string> FocusController::context_hints() const {
+    return {};
+}
+
+}  // namespace tf::views
