@@ -4,6 +4,7 @@
 #include <string>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 using namespace ftxui;
 
@@ -19,20 +20,28 @@ const Color LED_BLUE_DIM = Color(20, 85, 135);
 // (no widget data uses yellow).  See docs/UI_REDESIGN_V0.3.md §3e for the
 // full token rationale and §3a for the focus model that consumes them.
 //
-// Task v0.3-1 introduces this struct but only the `focus`, `fg_emphasized`,
-// `fg_default`, `fg_dim`, and accent_* tokens are referenced.  Subsequent
-// tasks (v0.3-5) migrate widget code from raw Color::* literals onto these
-// tokens.
+// Task v0.3-1 introduced this struct (focus / fg_* / accent_* tokens).
+// Task v0.3-5 (this commit) added `thesis_up` — the magenta accent
+// reserved for "shovel-thesis going up is interesting, not bad" widgets
+// (ui_shovel_intelligence, ui_category_trends) — and migrated every
+// widget off raw `Color::*` literals onto these tokens.
+//
+// Semantic discipline: each token has ONE meaning.  `accent_warning`
+// and `focus` happen to share the same FTXUI Color (Yellow) but carry
+// distinct semantics: warning = "needs attention" on a data row;
+// focus = "the cursor is here" on a chrome element.  No data row uses
+// the `focus` token; no chrome element uses `accent_warning`.
 // ---------------------------------------------------------------------------
 struct ColorTokens {
     Color focus;              // Focused-widget border + selection arrow.
     Color fg_default;         // Body text.
-    Color fg_dim;             // Secondary labels, breadcrumbs.
+    Color fg_dim;             // Secondary labels, breadcrumbs, flat-trend rows.
     Color fg_emphasized;      // Headline values, focused-widget title.
-    Color accent_positive;    // Value >= 0 / surplus.
-    Color accent_negative;    // Value <  0 / error state.
+    Color accent_positive;    // Value >= 0 / surplus / spending decreased.
+    Color accent_negative;    // Value <  0 / error state / disconnected.
     Color accent_warning;     // Needs attention (stale sync, over-budget).
-    Color accent_info;        // Neutral metadata (timestamps, breadcrumbs).
+    Color accent_info;        // Neutral metadata (timestamps, top-tier label).
+    Color thesis_up;          // Shovel-thesis: this number going up is *interesting*.
 };
 
 // Default theme.  Initialised inline so headers that include ViewCommon.h
@@ -47,6 +56,23 @@ inline const ColorTokens kTokens = {
     /*accent_negative=*/ Color::Red,
     /*accent_warning=*/  Color::Yellow,
     /*accent_info=*/     Color::Cyan,
+    /*thesis_up=*/       Color::Magenta,
+};
+
+// ---------------------------------------------------------------------------
+// KeyHint — one row in the contextual status-bar footer.
+// ---------------------------------------------------------------------------
+// Each widget exposes a `hints_when_focused()` free function returning a
+// vector<KeyHint>.  The StatusBar (owned by v0.3-4) joins these with the
+// global hint set into the two-row footer.  The same registry powers the
+// `?` help overlay so the two surfaces cannot drift apart.
+//
+// `key` is the visible label ("Enter", "j/k", "Esc") — verbatim as it
+// should appear in the bar.  `label` is the human description.
+// ---------------------------------------------------------------------------
+struct KeyHint {
+    std::string key;
+    std::string label;
 };
 
 inline std::string format_currency(double amount) {
