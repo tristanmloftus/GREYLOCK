@@ -437,7 +437,16 @@ enable_testing()
 # --------------------------------------------------------------------------
 # Main executable
 # --------------------------------------------------------------------------
-add_executable(TerminalFinance src/main.cpp src/views/DashboardView.cpp src/views/FocusController.cpp ${COMMON_SOURCES} $<TARGET_OBJECTS:tf_widgets>)
+add_executable(TerminalFinance
+  src/main.cpp
+  src/views/DashboardView.cpp
+  src/views/FocusController.cpp
+  # Task v0.3-2: drill views for net_worth + shovel_score.
+  src/views/drills/Drill_NetWorth.cpp
+  src/views/drills/Drill_ShovelScore.cpp
+  ${COMMON_SOURCES}
+  $<TARGET_OBJECTS:tf_widgets>
+)
 tf_register_first_party(TerminalFinance)
 
 target_link_libraries(TerminalFinance PRIVATE
@@ -1838,6 +1847,51 @@ endif()
 add_test(
   NAME DashboardFocusSnapshotTests
   COMMAND DashboardFocusSnapshotTests
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# --------------------------------------------------------------------------
+# DrillViewsSnapshotTests (Task v0.3-2)
+# Snapshot tests for the two new full-screen drill views:
+#   Drill_NetWorth     -> tests/snapshot/fixtures/drill_net_worth.txt
+#   Drill_ShovelScore  -> tests/snapshot/fixtures/drill_shovel_score.txt
+# Both render at 120x40.  Mirrors the DashboardFocusSnapshotTests setup
+# because the drill views pull from DataStore + DiscoveryService.
+# --------------------------------------------------------------------------
+add_executable(DrillViewsSnapshotTests
+  tests/test_drill_views_snapshot.cpp
+  src/views/drills/Drill_NetWorth.cpp
+  src/views/drills/Drill_ShovelScore.cpp
+  ${COMMON_SOURCES}
+  $<TARGET_OBJECTS:tf_widgets>
+)
+tf_register_first_party(DrillViewsSnapshotTests)
+if(MSVC)
+  target_compile_options(DrillViewsSnapshotTests PRIVATE /MT)
+endif()
+target_link_libraries(DrillViewsSnapshotTests PRIVATE
+  gtest
+  gtest_main
+  ftxui::dom
+  ftxui::screen
+  ftxui::component
+  nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
+)
+if(WIN32)
+  target_link_libraries(DrillViewsSnapshotTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(DrillViewsSnapshotTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+else()
+  target_link_libraries(DrillViewsSnapshotTests PRIVATE CURL::libcurl)
+endif()
+add_test(
+  NAME DrillViewsSnapshotTests
+  COMMAND DrillViewsSnapshotTests
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
