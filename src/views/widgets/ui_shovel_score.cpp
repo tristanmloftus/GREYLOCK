@@ -56,6 +56,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include "../ViewCommon.h"
+
 namespace ftxui {
 
 namespace {
@@ -93,10 +95,13 @@ Component ShovelScore(double score, int supplier_count, double total_shovel_spen
 // Builds the FTXUI Element graph described in the file header.  Pure
 // function.  Called once per frame by DashboardView::render().
 // ---------------------------------------------------------------------------
-Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend) {
+Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend, bool focused) {
     std::vector<Element> rows;
 
-    rows.push_back(text("Shovel Score") | bold);
+    // Title: bright bold + focus color when focused, plain bold otherwise.
+    Element title = text("Shovel Score") | bold;
+    if (focused) title = title | color(kTokens.fg_emphasized);
+    rows.push_back(title);
     rows.push_back(separator());
 
     // Tier-label + color lookup; see file header for the taxonomy.
@@ -127,7 +132,13 @@ Element ShovelScoreRenderer(double score, int supplier_count, double total_shove
     rows.push_back(text("Total shovel spend: $" + format_amount(total_shovel_spend)) | dim);
     rows.push_back(text("Shovel companies: " + std::to_string(supplier_count)) | dim);
 
-    return vbox(std::move(rows)) | border;
+    Element panel = vbox(std::move(rows));
+    if (focused) {
+        panel = panel | borderStyled(ROUNDED) | color(kTokens.focus);
+    } else {
+        panel = panel | border;
+    }
+    return panel;
 }
 
 } // namespace ftxui

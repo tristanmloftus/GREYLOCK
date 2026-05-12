@@ -39,6 +39,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include "../ViewCommon.h"
+
 namespace ftxui {
 
 namespace {
@@ -82,11 +84,20 @@ Component NetWorthBreakdown(double checking, double savings, double credit, doub
 // ---------------------------------------------------------------------------
 // Builds the FTXUI Element graph described in the file header.  Pure
 // function; no I/O.  Called once per frame by DashboardView::render().
+//
+// `focused` (Task v0.3-1): when true, the panel renders with a yellow
+// rounded border and the title row in bright bold to signal that this
+// widget has Dashboard focus.  When false, renders exactly as v0.2
+// (default border, plain bold title) so existing snapshot fixtures
+// remain byte-identical.
 // ---------------------------------------------------------------------------
-Element NetWorthBreakdownRenderer(double checking, double savings, double credit, double investment, double net_worth) {
+Element NetWorthBreakdownRenderer(double checking, double savings, double credit, double investment, double net_worth, bool focused) {
     std::vector<Element> rows;
 
-    rows.push_back(text("Net Worth") | bold);
+    // Title: bright bold + focus color when focused, plain bold otherwise.
+    Element title = text("Net Worth") | bold;
+    if (focused) title = title | color(kTokens.fg_emphasized);
+    rows.push_back(title);
     rows.push_back(separator());
 
     // Headline total: green if non-negative, red if negative.
@@ -104,7 +115,13 @@ Element NetWorthBreakdownRenderer(double checking, double savings, double credit
     rows.push_back(hbox({ text("Credit:     ") | dim, credit_value }));
     rows.push_back(hbox({ text("Investment: ") | dim, text(format_currency(investment)) }));
 
-    return vbox(std::move(rows)) | border;
+    Element panel = vbox(std::move(rows));
+    if (focused) {
+        panel = panel | borderStyled(ROUNDED) | color(kTokens.focus);
+    } else {
+        panel = panel | border;
+    }
+    return panel;
 }
 
 } // namespace ftxui

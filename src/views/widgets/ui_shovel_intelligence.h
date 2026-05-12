@@ -66,6 +66,10 @@ namespace ftxui {
 Component ShovelIntelligence(const std::vector<tf::widgets::SupplierSpend>& suppliers);
 
 // Build a single-frame FTXUI Element.  Pure function.
-Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>& suppliers);
+//
+// `focused` (Task v0.3-1): when true, render with a yellow rounded
+// border and the title in bright bold.  Default false preserves the v0.2
+// visual byte-for-byte (existing snapshot fixtures unchanged).
+Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>& suppliers, bool focused = false);
 
 } // namespace ftxui

@@ -39,6 +39,10 @@ Component NetWorthBreakdown(double checking, double savings, double credit, doub
 
 // Build a single-frame FTXUI Element.  Pure function: same inputs always
 // produce the same Element graph.
-Element NetWorthBreakdownRenderer(double checking, double savings, double credit, double investment, double net_worth);
+//
+// `focused` (Task v0.3-1): when true, render with a yellow rounded
+// border and the title row in bright bold.  Default false preserves the
+// v0.2 visual byte-for-byte (existing snapshot fixtures unchanged).
+Element NetWorthBreakdownRenderer(double checking, double savings, double credit, double investment, double net_worth, bool focused = false);
 
 } // namespace ftxui

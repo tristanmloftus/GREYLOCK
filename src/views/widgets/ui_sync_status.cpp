@@ -46,6 +46,8 @@
 
 #include "ui_sync_status.h"
 
+#include "../ViewCommon.h"
+
 namespace ftxui {
 
 // ---------------------------------------------------------------------------
@@ -66,10 +68,13 @@ Component SyncStatusIndicator(const std::vector<tf::widgets::SyncStatus>& status
 // Builds the FTXUI Element graph described in the file header.  Pure
 // function.  Called once per frame by DashboardView::render().
 // ---------------------------------------------------------------------------
-Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses) {
+Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses, bool focused) {
     std::vector<Element> rows;
 
-    rows.push_back(text("Connection Status") | bold);
+    // Title: bright bold + focus color when focused, plain bold otherwise.
+    Element title = text("Connection Status") | bold;
+    if (focused) title = title | color(kTokens.fg_emphasized);
+    rows.push_back(title);
     rows.push_back(separator());
 
     if (statuses.empty()) {
@@ -101,7 +106,13 @@ Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& 
         }
     }
 
-    return vbox(std::move(rows)) | border;
+    Element panel = vbox(std::move(rows));
+    if (focused) {
+        panel = panel | borderStyled(ROUNDED) | color(kTokens.focus);
+    } else {
+        panel = panel | border;
+    }
+    return panel;
 }
 
 } // namespace ftxui

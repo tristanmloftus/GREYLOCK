@@ -47,6 +47,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include "../ViewCommon.h"
+
 namespace ftxui {
 
 namespace {
@@ -84,10 +86,13 @@ Component CategorySpendingTrends(const std::vector<tf::widgets::CategoryTrend>& 
 // Builds the FTXUI Element graph described in the file header.  Pure
 // function.  Called once per frame by DashboardView::render().
 // ---------------------------------------------------------------------------
-Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items) {
+Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items, bool focused) {
     std::vector<Element> rows;
 
-    rows.push_back(text("Top Spending Categories") | bold);
+    // Title: bright bold + focus color when focused, plain bold otherwise.
+    Element title = text("Top Spending Categories") | bold;
+    if (focused) title = title | color(kTokens.fg_emphasized);
+    rows.push_back(title);
     rows.push_back(separator());
 
     if (trends.empty()) {
@@ -124,7 +129,13 @@ Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTr
         }
     }
 
-    return vbox(std::move(rows)) | border;
+    Element panel = vbox(std::move(rows));
+    if (focused) {
+        panel = panel | borderStyled(ROUNDED) | color(kTokens.focus);
+    } else {
+        panel = panel | border;
+    }
+    return panel;
 }
 
 } // namespace ftxui

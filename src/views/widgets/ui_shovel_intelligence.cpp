@@ -49,6 +49,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include "../ViewCommon.h"
+
 namespace ftxui {
 
 namespace {
@@ -86,10 +88,13 @@ Component ShovelIntelligence(const std::vector<tf::widgets::SupplierSpend>& supp
 // Builds the FTXUI Element graph described in the file header.  Pure
 // function.  Called once per frame by DashboardView::render().
 // ---------------------------------------------------------------------------
-Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>& suppliers) {
+Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>& suppliers, bool focused) {
     std::vector<Element> rows;
 
-    rows.push_back(text("Shovel Intelligence") | bold);
+    // Title: bright bold + focus color when focused, plain bold otherwise.
+    Element title = text("Shovel Intelligence") | bold;
+    if (focused) title = title | color(kTokens.fg_emphasized);
+    rows.push_back(title);
     rows.push_back(separator());
 
     if (suppliers.empty()) {
@@ -123,7 +128,13 @@ Element ShovelIntelligenceRenderer(const std::vector<tf::widgets::SupplierSpend>
         }
     }
 
-    return vbox(std::move(rows)) | border;
+    Element panel = vbox(std::move(rows));
+    if (focused) {
+        panel = panel | borderStyled(ROUNDED) | color(kTokens.focus);
+    } else {
+        panel = panel | border;
+    }
+    return panel;
 }
 
 } // namespace ftxui

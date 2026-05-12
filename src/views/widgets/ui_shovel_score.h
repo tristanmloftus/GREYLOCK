@@ -40,6 +40,10 @@ namespace ftxui {
 Component ShovelScore(double score, int supplier_count, double total_shovel_spend);
 
 // Build a single-frame FTXUI Element.  Pure function.
-Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend);
+//
+// `focused` (Task v0.3-1): when true, render with a yellow rounded
+// border and the title in bright bold.  Default false preserves the v0.2
+// visual byte-for-byte (existing snapshot fixtures unchanged).
+Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend, bool focused = false);
 
 } // namespace ftxui

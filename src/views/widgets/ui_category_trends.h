@@ -65,6 +65,10 @@ namespace ftxui {
 Component CategorySpendingTrends(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items = 5);
 
 // Build a single-frame FTXUI Element.  Pure function.
-Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items = 5);
+//
+// `focused` (Task v0.3-1): when true, render with a yellow rounded
+// border and the title in bright bold.  Default false preserves the v0.2
+// visual byte-for-byte (existing snapshot fixtures unchanged).
+Element CategorySpendingTrendsRenderer(const std::vector<tf::widgets::CategoryTrend>& trends, size_t max_items = 5, bool focused = false);
 
 } // namespace ftxui

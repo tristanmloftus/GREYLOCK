@@ -66,6 +66,10 @@ namespace ftxui {
 Component SyncStatusIndicator(const std::vector<tf::widgets::SyncStatus>& statuses);
 
 // Build a single-frame FTXUI Element.  Pure function.
-Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses);
+//
+// `focused` (Task v0.3-1): when true, render with a yellow rounded
+// border and the title in bright bold.  Default false preserves the v0.2
+// visual byte-for-byte (existing snapshot fixtures unchanged).
+Element SyncStatusIndicatorRenderer(const std::vector<tf::widgets::SyncStatus>& statuses, bool focused = false);
 
 } // namespace ftxui
