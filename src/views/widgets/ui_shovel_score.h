@@ -1,18 +1,45 @@
-// ui_shovel_score — promoted from proposals/ in Phase 5.
-//
-// Renders the user's "Shovel Score" — a 0-100 composite of how much of
-// the user's spend goes to AI-infrastructure suppliers ("shovels"),
-// along with the count of distinct suppliers and total shovel spend.
-
 #pragma once
+
+// ---------------------------------------------------------------------------
+// ui_shovel_score — Dashboard "Shovel Score" panel renderer.
+// ---------------------------------------------------------------------------
+// Renders the user's composite "Shovel Score" — a 0-100 number summarizing
+// how aggressively the user is spending on AI-infrastructure suppliers
+// ("shovels") — alongside the count of distinct shovel suppliers and the
+// total dollar spend on those suppliers.
+//
+// PARAMETERS
+//   score                 0-100 composite, ALREADY CLAMPED by the caller.
+//                         The widget renders this verbatim; it does NOT
+//                         re-clamp.  See DashboardView.cpp's
+//                         compute_shovel_score() for the v0.2 stop-gap
+//                         formula that produces this value, including
+//                         why it is a placeholder and what a real model
+//                         should look like.
+//   supplier_count        Number of distinct shovel tickers discovered.
+//                         Rendered as an integer.
+//   total_shovel_spend    Total dollar spend across all shovel tickers,
+//                         in dollars (NOT cents), as a non-negative double.
+//
+// NAMESPACE NOTE
+//   These free functions live in `namespace ftxui` (rather than
+//   `tf::widgets`) because they take only primitive types — there is no
+//   widget-owned struct to put in tf::widgets.  Same rationale as
+//   ui_net_worth.h.
+//
+// CALLERS
+//   src/views/DashboardView.cpp (the only caller today).
+// ---------------------------------------------------------------------------
 
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/component.hpp>
 
 namespace ftxui {
 
+// Component wrapper for container slotting.  Currently unused.
 Component ShovelScore(double score, int supplier_count, double total_shovel_spend);
 
+// Build a single-frame FTXUI Element.  Pure function.
 Element ShovelScoreRenderer(double score, int supplier_count, double total_shovel_spend);
 
 } // namespace ftxui
