@@ -10,3 +10,11 @@ data.json
 # These are machine-local and gitignored; use tests/fixtures/ for CI certs.
 dev/cert.pem
 dev/key.pem
+
+# Local-dev SQLite + backups (contain real Plaid-synced data; never publish).
+dev/*.db
+dev/*.db.preencrypted-backup
+
+# Agent / session state — machine-local, never shared.
+.claude/
+.omc/
