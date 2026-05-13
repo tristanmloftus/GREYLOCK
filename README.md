@@ -1,4 +1,4 @@
-[![CI](https://github.com/tristanmloftus/GREYLOCK/actions/workflows/ci.yml/badge.svg?branch=v0.2-dev)](https://github.com/tristanmloftus/GREYLOCK/actions/workflows/ci.yml)
+[![CI](https://github.com/tristanmloftus/GREYLOCK/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tristanmloftus/GREYLOCK/actions/workflows/ci.yml)
 
 # TerminalFinance (GREYLOCK)
 
@@ -9,9 +9,18 @@ a BLAKE2b-chained ledger. Data at rest is encrypted with SQLCipher; Plaid
 access tokens are wrapped in libsodium envelope encryption with AAD bound to
 `account_id`.
 
+> **Internal tool.** GREYLOCK is the Loftus family's private finance OS —
+> not a SaaS, not a product, not pitched. Repo is private; all binaries
+> run locally or on a self-hosted server. No cloud sync of financial state.
+
 ## Status
 
-v0.2 in development on the `v0.2-dev` branch. Target platforms:
+v0.2 lives on `main`. The six-phase v0.2 plan in
+[V0_2_PLAN.md](V0_2_PLAN.md) is shipped through Phase 5 (TUI + Discovery
++ Consolidation), plus the `Drill_SyncStatus` view added on top.
+v0.3 UI redesign drafts live in [docs/UI_REDESIGN_V0.3.md](docs/UI_REDESIGN_V0.3.md).
+
+Target platforms:
 
 - **Linux** — primary CI target. Self-hosted runner (`skynet`) green at
   `4b4c861`. Server runs on Linux.
@@ -20,27 +29,36 @@ v0.2 in development on the `v0.2-dev` branch. Target platforms:
 - **Windows** — supported via vcpkg manifest (see [vcpkg.json](vcpkg.json)).
   Client-only in practice; the v0.1 DPAPI secret store is preserved.
 
-Six implementation phases are tracked in [V0_2_PLAN.md](V0_2_PLAN.md);
-Phase 5 (TUI + Discovery + Consolidation) is the most recent shipped work.
-
 ## Quick start
 
 ```sh
-# 1. Install dependencies (macOS shown; Linux/Windows in docs/CONTRIBUTING.md).
+# 1. Clone.
+git clone https://github.com/tristanmloftus/GREYLOCK.git
+cd GREYLOCK
+
+# 2. Install dependencies (macOS shown; Linux/Windows in docs/CONTRIBUTING.md).
 brew bundle --file=Brewfile
 
-# 2. Configure and build (server + client + tests).
+# 3. Configure and build (server + client + tests).
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 4
 
-# 3. Run the 28 ctest targets.
+# 4. Run the 28 ctest targets to verify the build.
 ctest --test-dir build --output-on-failure
+
+# 5. Generate dev TLS certs (one-time per checkout, server only).
+scripts/generate-dev-cert.sh
+
+# 6. Run the client.
+./build/TerminalFinance        # Q to quit
 ```
 
 Per-platform deps and the full developer workflow (Linux apt packages,
 Windows vcpkg toolchain, coverage builds, snapshot updates) live in
-[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Operating a server is in
-[docs/RUNBOOK.md](docs/RUNBOOK.md).
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Operating the server (TLS
+cert generation, `TF_MASTER_KEY`, enrollment-token flow, Plaid env vars)
+is in [docs/RUNBOOK.md](docs/RUNBOOK.md). Per-platform build recipes
+(Apple Clang, GCC, MSVC; Debug vs Release) are in [BUILD.md](BUILD.md).
 
 ## Architecture in one diagram
 

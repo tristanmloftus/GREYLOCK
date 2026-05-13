@@ -427,6 +427,29 @@ int main(int argc, char* argv[]) {
     tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
     tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
 
+    // TODO(v0.4-server): wire GET /sync-status endpoint.
+    //
+    //   The TUI's Drill_SyncStatus view (Task v0.3-3) already calls
+    //   BackendClient::get_sync_status() which posts to GET /sync-status.
+    //   Today the route does not exist server-side; the client treats
+    //   the 404 as a feature flag ("endpoint not yet available; showing
+    //   local cache") and falls back to the DataStore-derived view that
+    //   the dashboard widget already renders.  Re-auth ([R] key) is
+    //   gated behind a real response from this endpoint.
+    //
+    //   v0.4 work:
+    //     1. Add a Phase-4-style data handler module (e.g. tf::data::
+    //        register_sync_status_handler) that joins:
+    //          - server-side accounts.institution (already present)
+    //          - audit_log entries with action="sync_*" (newest per
+    //            plaid_item_id) for last_success/last_attempt/error_code
+    //        and emits the JSON contract documented in
+    //        src/services/BackendClient.h (struct SyncStatusItem +
+    //        get_sync_status doc).
+    //     2. Register the handler here, session-gated on Bearer auth.
+    //     3. Delete this TODO + the 404 fallback branch in
+    //        BackendClient::get_sync_status() once the endpoint ships.
+    //
     // Phase 5: GET /supplier-map — session-gated canonical supplier rules.
     // Reads data/supplier_map.json relative to CWD; TF_SUPPLIER_MAP_PATH
     // overrides for tests + alternate deployments.

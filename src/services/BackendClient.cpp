@@ -48,6 +48,76 @@ std::variant<bool, BackendError> BackendClient::healthz() {
 }
 
 // --------------------------------------------------------------------------
+// get_sync_status — Task v0.3-3.
+// --------------------------------------------------------------------------
+// Calls GET /sync-status with the (optional) session token attached.  Maps
+// the response per the contract in BackendClient.h:
+//   - 200 + valid JSON       -> parsed std::vector<SyncStatusItem>.
+//   - 404                    -> std::nullopt (endpoint not yet shipped).
+//                               v0.4 server work; see TODO(v0.4-server)
+//                               marker in server/main.cpp.
+//   - other failures         -> BackendError propagated unchanged.
+//
+// Parser tolerance: missing / wrong-type fields default to the zero
+// sentinel for that field (empty string, 0).  We do NOT throw on a
+// malformed row; the drill view will simply render the row with blanks
+// where the server omitted data.  A wholly-missing "items" array yields
+// an empty vector (treat as "no Items linked yet").
+// --------------------------------------------------------------------------
+std::variant<std::optional<std::vector<SyncStatusItem>>, BackendError>
+BackendClient::get_sync_status(std::optional<std::string> session_token) {
+    auto result = get("/sync-status", session_token);
+
+    if (std::holds_alternative<BackendError>(result)) {
+        const auto& err = std::get<BackendError>(result);
+        // 404 is the "endpoint not yet implemented" signal — the drill
+        // view falls back to the DataStore-derived render.  ANY OTHER
+        // BackendError (transport, 401, 5xx, malformed JSON) propagates
+        // so the caller can distinguish "missing" from "broken".
+        if (err.kind == BackendError::Kind::NotFound) {
+            return std::optional<std::vector<SyncStatusItem>>{};
+        }
+        return err;
+    }
+
+    const auto& body = std::get<json>(result);
+    std::vector<SyncStatusItem> items;
+    if (body.contains("items") && body["items"].is_array()) {
+        items.reserve(body["items"].size());
+        for (const auto& it : body["items"]) {
+            SyncStatusItem row;
+            if (it.contains("institution") && it["institution"].is_string()) {
+                row.institution = it["institution"].get<std::string>();
+            }
+            if (it.contains("item_id") && it["item_id"].is_string()) {
+                row.item_id = it["item_id"].get<std::string>();
+            }
+            if (it.contains("last_success_unix") &&
+                it["last_success_unix"].is_number_integer()) {
+                row.last_success_unix = it["last_success_unix"].get<int64_t>();
+            }
+            if (it.contains("last_attempt_unix") &&
+                it["last_attempt_unix"].is_number_integer()) {
+                row.last_attempt_unix = it["last_attempt_unix"].get<int64_t>();
+            }
+            if (it.contains("last_error_code") &&
+                it["last_error_code"].is_string()) {
+                row.last_error_code = it["last_error_code"].get<std::string>();
+            }
+            if (it.contains("account_ids") && it["account_ids"].is_array()) {
+                for (const auto& a : it["account_ids"]) {
+                    if (a.is_string()) {
+                        row.account_ids.push_back(a.get<std::string>());
+                    }
+                }
+            }
+            items.push_back(std::move(row));
+        }
+    }
+    return std::optional<std::vector<SyncStatusItem>>{std::move(items)};
+}
+
+// --------------------------------------------------------------------------
 // Private helpers
 // --------------------------------------------------------------------------
 
