@@ -59,6 +59,9 @@ Windows vcpkg toolchain, coverage builds, snapshot updates) live in
 cert generation, `TF_MASTER_KEY`, enrollment-token flow, Plaid env vars)
 is in [docs/RUNBOOK.md](docs/RUNBOOK.md). Per-platform build recipes
 (Apple Clang, GCC, MSVC; Debug vs Release) are in [BUILD.md](BUILD.md).
+The QA-agent protocol (game-tester-style TUI testing, issue
+templates, label conventions) is in
+[docs/QA_PROMPT.md](docs/QA_PROMPT.md).
 
 ## Architecture in one diagram
 
