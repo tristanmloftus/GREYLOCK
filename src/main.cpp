@@ -133,13 +133,10 @@ public:
             else if (env_str == "production") env = PlaidEnvironment::Production;
         }
 
-        bool use_stub = true;
-        if (!client_id.empty() && !secret.empty()) {
-            use_stub = false;
-        }
-        auto plaid = create_plaid_service(use_stub);
-        if (use_stub) {
-            Logger::instance().warning("Using stub Plaid service - no credentials configured");
+        auto backend = services.get_backend_client();
+        auto plaid = create_plaid_service(backend);
+        if (!backend) {
+            Logger::instance().warning("Using stub Plaid service - no backend configured");
         }
         services.set_plaid(plaid);
 
@@ -1133,25 +1130,32 @@ int main(int argc, char** argv) {
             app.save();
             return true;
         }
-        // Link Plaid account (v0.2: server-mediated via PlaidTokenBroker)
-        if (event == Event::Character('p') || event == Event::Character('P')) {
-            app.status_message = "Plaid: Use 'L' to link an account via the server endpoint.";
-            return true;
-        }
-        // Link with public token (v0.2: pass account_id + public_token to server)
+        // Link Plaid account (v0.2: server-mediated Plaid Link flow)
         if (event == Event::Character('l') || event == Event::Character('L')) {
-            auto plaid = app.services.get_plaid();
-            if (plaid && !app.data_store.entities.empty() &&
-                !app.data_store.accounts.empty()) {
-                const auto& acc = app.data_store.accounts[0];
-                bool ok = plaid->link_account(acc.id, "public-sandbox-test");
-                if (ok) {
-                    app.status_message = "Account linked via server.";
+            if (app.current_tab == 1) {
+                auto plaid = app.services.get_plaid();
+                if (!plaid) {
+                    app.status_message = "Plaid service not available.";
+                    return true;
+                }
+                auto entity_id = app.data_store.entities.empty()
+                    ? "" : app.data_store.entities[app.current_entity].id;
+                auto accounts = app.data_store.get_accounts_for_entity(entity_id);
+                int selected = app.accounts_view->get_selected();
+                if (selected >= 0 && selected < (int)accounts.size()) {
+                    const auto& acc = *accounts[selected];
+                    app.status_message = "Linking account '" + acc.name + "' via Plaid...";
+                    bool ok = plaid->initiate_link_flow(acc.id);
+                    if (ok) {
+                        app.status_message = "Account '" + acc.name + "' linked successfully.";
+                    } else {
+                        app.status_message = "Link failed: " + plaid->get_last_error();
+                    }
                 } else {
-                    app.status_message = "Link failed: " + plaid->get_last_error();
+                    app.status_message = "No account selected.";
                 }
             } else {
-                app.status_message = "No accounts to link.";
+                app.status_message = "Switch to Accounts view (Tab) to link an account.";
             }
             return true;
         }

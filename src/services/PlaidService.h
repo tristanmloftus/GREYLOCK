@@ -67,6 +67,13 @@ public:
     virtual bool link_account(const std::string& account_id,
                               const std::string& public_token) = 0;
 
+    // Initiate the full Plaid Link flow for account_id.
+    // 1. POST /accounts/:id/link/init → gets link_token
+    // 2. Open browser to Plaid Link page
+    // 3. Poll is_plaid_linked (2s × up to 150 = 5 min timeout)
+    // Returns true once the account is linked.
+    virtual bool initiate_link_flow(const std::string& account_id) = 0;
+
     // Retrieve cached transactions for the given account from the server.
     // The server performs the Plaid API call using the stored encrypted token.
     virtual std::vector<PlaidTransaction> get_transactions(
@@ -100,6 +107,10 @@ public:
         return true;
     }
 
+    bool initiate_link_flow(const std::string& /*account_id*/) override {
+        return true;
+    }
+
     std::vector<PlaidTransaction> get_transactions(
         const std::string& /*account_id*/,
         const std::string& /*start_date*/,
@@ -127,7 +138,9 @@ private:
     std::chrono::seconds timeout_{30};
 };
 
-// Factory: returns StubPlaidService when use_stub=true.
+// Factory: returns StubPlaidService when use_stub=true or backend is null.
 // Production path (use_stub=false) returns a server-mediated implementation
-// that calls the TerminalFinance backend.
+// that calls the TerminalFinance backend via BackendClient.
 std::shared_ptr<IPlaidService> create_plaid_service(bool use_stub = false);
+std::shared_ptr<IPlaidService> create_plaid_service(
+    std::shared_ptr<class BackendClient> backend);

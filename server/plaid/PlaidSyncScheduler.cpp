@@ -117,14 +117,90 @@ void PlaidSyncScheduler::worker_thread() {
 }
 
 // ---------------------------------------------------------------------------
+// sync_account — force-sync a single Plaid-linked account.
+//
+// Decrypts the access token, calls /transactions/sync, persists results.
+// Throws on account-not-found or decryption failure; reports API errors
+// via audit log without throwing.
+// ---------------------------------------------------------------------------
+void PlaidSyncScheduler::sync_account(const std::string& account_id) {
+    // Verify account exists.
+    {
+        auto stmt = db_.prepare(
+            "SELECT is_plaid_linked FROM accounts WHERE id = ?;");
+        sqlite3_bind_text(stmt.get(), 1,
+            account_id.c_str(), static_cast<int>(account_id.size()), SQLITE_STATIC);
+        if (stmt.step() != SQLITE_ROW) {
+            throw std::runtime_error(
+                "PlaidSyncScheduler::sync_account: account not found: " + account_id);
+        }
+        if (sqlite3_column_int(stmt.get(), 0) == 0) {
+            throw std::runtime_error(
+                "PlaidSyncScheduler::sync_account: account not linked: " + account_id);
+        }
+    }
+
+    broker_.withDecryptedToken(
+        account_id,
+        [&](std::string_view token) -> void {
+            auto cursor_opt = get_cursor(account_id);
+            auto result = api_.sync_transactions(token, cursor_opt);
+            if (!result.has_value()) {
+                emit_sync_audit(account_id, "plaid_sync_failed", "failure",
+                    {{"reason", "api_error"}});
+                return;
+            }
+
+            int added_count = 0;
+            for (const auto& tx : result->added) {
+                try { upsert_transaction(account_id, tx); ++added_count; }
+                catch (const std::exception& ex) {
+                    std::cerr << "PlaidSyncScheduler: insert failed for tx "
+                              << tx.transaction_id << ": " << ex.what() << "\n";
+                }
+            }
+
+            int modified_count = 0;
+            for (const auto& tx : result->modified) {
+                try { update_transaction(tx); ++modified_count; }
+                catch (const std::exception& ex) {
+                    std::cerr << "PlaidSyncScheduler: update failed for tx "
+                              << tx.transaction_id << ": " << ex.what() << "\n";
+                }
+            }
+
+            int removed_count = 0;
+            for (const auto& tx_id : result->removed_ids) {
+                try { delete_transaction(tx_id); ++removed_count; }
+                catch (const std::exception& ex) {
+                    std::cerr << "PlaidSyncScheduler: delete failed for tx "
+                              << tx_id << ": " << ex.what() << "\n";
+                }
+            }
+
+            if (!result->next_cursor.empty()) {
+                store_cursor(account_id, result->next_cursor);
+            }
+
+            emit_sync_audit(account_id, "plaid_sync_completed", "success",
+                {{"added", added_count},
+                 {"modified", modified_count},
+                 {"removed", removed_count}});
+        },
+        [&]() -> void {
+            emit_sync_audit(account_id, "plaid_sync_failed", "failure",
+                {{"reason", "token_missing"}});
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
 // sync_all_accounts
 //
 // 1. SELECT all Plaid-linked account IDs.
-// 2. For each, use withDecryptedToken to get the access token (scoped
-//    lifetime), call sync_transactions, persist results.
+// 2. For each, call sync_account (per-account error isolation — F-3).
 // ---------------------------------------------------------------------------
 void PlaidSyncScheduler::sync_all_accounts() {
-    // Collect all plaid-linked account IDs.
     std::vector<std::string> account_ids;
     {
         auto stmt = db_.prepare(
@@ -139,95 +215,23 @@ void PlaidSyncScheduler::sync_all_accounts() {
     }
 
     if (account_ids.empty()) {
-        // No linked accounts — nothing to sync; no audit entry needed.
         return;
     }
 
     for (const std::string& account_id : account_ids) {
-        // Per-account error isolation — F-3.
         try {
-            broker_.withDecryptedToken(
-                account_id,
-                [&](std::string_view token) -> void {
-                    // Retrieve stored cursor.
-                    auto cursor_opt = get_cursor(account_id);
-
-                    // Call /transactions/sync.
-                    auto result = api_.sync_transactions(token, cursor_opt);
-                    if (!result.has_value()) {
-                        // Transport or API error.
-                        emit_sync_audit(account_id, "plaid_sync_failed", "failure",
-                            {{"reason", "api_error"}});
-                        return;
-                    }
-
-                    // Persist added transactions.
-                    int added_count = 0;
-                    for (const auto& tx : result->added) {
-                        try {
-                            upsert_transaction(account_id, tx);
-                            ++added_count;
-                        } catch (const std::exception& ex) {
-                            std::cerr << "PlaidSyncScheduler: insert failed for tx "
-                                      << tx.transaction_id << ": " << ex.what() << "\n";
-                        }
-                    }
-
-                    // Persist modified transactions.
-                    int modified_count = 0;
-                    for (const auto& tx : result->modified) {
-                        try {
-                            update_transaction(tx);
-                            ++modified_count;
-                        } catch (const std::exception& ex) {
-                            std::cerr << "PlaidSyncScheduler: update failed for tx "
-                                      << tx.transaction_id << ": " << ex.what() << "\n";
-                        }
-                    }
-
-                    // Remove deleted transactions.
-                    int removed_count = 0;
-                    for (const auto& tx_id : result->removed_ids) {
-                        try {
-                            delete_transaction(tx_id);
-                            ++removed_count;
-                        } catch (const std::exception& ex) {
-                            std::cerr << "PlaidSyncScheduler: delete failed for tx "
-                                      << tx_id << ": " << ex.what() << "\n";
-                        }
-                    }
-
-                    // Persist cursor.
-                    if (!result->next_cursor.empty()) {
-                        store_cursor(account_id, result->next_cursor);
-                    }
-
-                    // Audit: log counts only — never log transaction data.
-                    emit_sync_audit(account_id, "plaid_sync_completed", "success",
-                        {{"added",    added_count},
-                         {"modified", modified_count},
-                         {"removed",  removed_count}});
-                },
-                [&]() -> void {
-                    // No token present — data corruption or cleared.
-                    emit_sync_audit(account_id, "plaid_sync_failed", "failure",
-                        {{"reason", "token_missing"}});
-                }
-            );
+            sync_account(account_id);
         } catch (const std::exception& ex) {
-            // withDecryptedToken threw (e.g. decryption failure) — log + audit.
             std::cerr << "PlaidSyncScheduler: error processing account "
                       << account_id << ": " << ex.what() << "\n";
             try {
                 emit_sync_audit(account_id, "plaid_sync_failed", "failure",
                     {{"reason", "exception"}, {"message", ex.what()}});
             } catch (...) {
-                // Audit write failed — just log to stderr.
                 std::cerr << "PlaidSyncScheduler: failed to write audit for "
                           << account_id << "\n";
             }
         } catch (...) {
-            // Unknown exception.
             std::cerr << "PlaidSyncScheduler: unknown exception processing account "
                       << account_id << "\n";
             try {

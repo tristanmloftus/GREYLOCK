@@ -14,6 +14,7 @@
 #include "../db/Database.h"
 #include "../audit/IAuditLog.h"
 #include "../audit/AuditEvent.h"
+#include "../plaid/PlaidSyncScheduler.h"
 
 #include <nlohmann/json.hpp>
 #include <sodium.h>
@@ -355,9 +356,55 @@ static void handle_delete_account(const httplib::Request& req,
     send_json_acc(res, 200, json::object());
 }
 
+static void handle_sync_account(const httplib::Request& req,
+                                 httplib::Response& res,
+                                 Database& db,
+                                 tf::plaid::PlaidSyncScheduler& scheduler)
+{
+    auto user_id = require_session(req, db);
+    if (!user_id) { send_json_acc(res, 401, {{"error", "unauthorized"}}); return; }
+
+    std::string account_id = req.path_params.at("id");
+
+    std::string entity_id = get_account_entity_id(db, account_id);
+    if (entity_id.empty()) {
+        send_json_acc(res, 404, {{"error", "not_found"}});
+        return;
+    }
+
+    if (!user_has_access_to_entity(db, *user_id, entity_id)) {
+        send_json_acc(res, 403, {{"error", "forbidden"}});
+        return;
+    }
+
+    auto stmt = db.prepare("SELECT is_plaid_linked FROM accounts WHERE id = ?;");
+    sqlite3_bind_text(stmt.get(), 1,
+        account_id.data(), static_cast<int>(account_id.size()), SQLITE_STATIC);
+
+    if (stmt.step() != SQLITE_ROW) {
+        send_json_acc(res, 404, {{"error", "not_found"}});
+        return;
+    }
+
+    int is_plaid_linked = sqlite3_column_int(stmt.get(), 0);
+    if (!is_plaid_linked) {
+        send_json_acc(res, 400, {{"error", "not_linked"}});
+        return;
+    }
+
+    try {
+        scheduler.sync_account(account_id);
+        send_json_acc(res, 200, {{"success", true}});
+    } catch (const std::exception& ex) {
+        send_json_acc(res, 500, {{"error", "sync_failed"},
+                                  {"message", ex.what()}});
+    }
+}
+
 void register_accounts_handlers(httplib::SSLServer& server,
                                  Database& db,
-                                 tf::audit::IAuditLog& audit_log)
+                                 tf::audit::IAuditLog& audit_log,
+                                 tf::plaid::PlaidSyncScheduler* plaid_scheduler)
 {
     server.Get("/entities/:entity_id/accounts",
         [&db](const httplib::Request& req, httplib::Response& res) {
@@ -418,6 +465,26 @@ void register_accounts_handlers(httplib::SSLServer& server,
                 res.set_content(json({{"error","internal"}}).dump(), "application/json");
             }
         });
+
+    if (plaid_scheduler) {
+        server.Post("/accounts/:id/sync",
+            [&db, plaid_scheduler](const httplib::Request& req, httplib::Response& res) {
+                try { handle_sync_account(req, res, db, *plaid_scheduler); }
+                catch (const std::exception& ex) {
+                    res.status = 500;
+                    res.set_content(json({{"error","internal"},{"message",ex.what()}}).dump(), "application/json");
+                } catch (...) {
+                    res.status = 500;
+                    res.set_content(json({{"error","internal"}}).dump(), "application/json");
+                }
+            });
+    } else {
+        server.Post("/accounts/:id/sync",
+            [](const httplib::Request&, httplib::Response& res) {
+                send_json_acc(res, 503, {{"error", "sync_unavailable"},
+                                          {"message", "Plaid sync not available"}});
+            });
+    }
 }
 
 } // namespace tf::data

@@ -60,7 +60,7 @@ public:
         }
 
         if (filtered_accounts.empty()) {
-            rows.push_back(text("  No accounts. Press [P] to link via Plaid.") | dim);
+            rows.push_back(text("  No accounts. Press [L] to link via Plaid.") | dim);
         }
 
         if (!filtered_accounts.empty()) {
@@ -72,7 +72,7 @@ public:
         }
 
         rows.push_back(text(""));
-        rows.push_back(text("  [P] Link Plaid  [S] Save  [Q] Quit") | dim);
+        rows.push_back(text("  [L] Link Plaid  [S] Save  [Q] Quit") | dim);
 
         return vbox(std::move(rows)) | flex;
     }

@@ -397,6 +397,7 @@ set(COMMON_SOURCES
   src/utils/SyntheticGenerator.cpp
   src/utils/Validator.cpp
   src/utils/ConfigManager.cpp
+  src/utils/OpenBrowser.cpp
   ${SECRET_STORE_SOURCES}
 )
 
@@ -1502,6 +1503,8 @@ add_test(NAME PlaidTokenBrokerTests COMMAND PlaidTokenBrokerTests)
 add_executable(PlaidServiceRefactorTests
   tests/test_plaid_service_refactor.cpp
   src/services/PlaidService.cpp
+  src/services/BackendClient.cpp
+  src/services/http/CurlHttpClient.cpp
   src/utils/Logger.h
 )
 tf_register_first_party(PlaidServiceRefactorTests)
@@ -1512,11 +1515,24 @@ endif()
 
 target_include_directories(PlaidServiceRefactorTests PRIVATE
   "${CMAKE_SOURCE_DIR}"
+  "${CMAKE_SOURCE_DIR}/src"
 )
 
 target_link_libraries(PlaidServiceRefactorTests PRIVATE
-  gtest gtest_main
+  gtest gtest_main nlohmann_json::nlohmann_json ${_SODIUM_TARGET}
 )
+
+if(WIN32)
+  target_link_libraries(PlaidServiceRefactorTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(PlaidServiceRefactorTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+else()
+  target_link_libraries(PlaidServiceRefactorTests PRIVATE CURL::libcurl)
+endif()
 
 add_test(NAME PlaidServiceRefactorTests COMMAND PlaidServiceRefactorTests)
 
@@ -1590,6 +1606,56 @@ else()
 endif()
 
 add_test(NAME PlaidSyncSchedulerTests COMMAND PlaidSyncSchedulerTests)
+
+# --------------------------------------------------------------------------
+# PlaidApiClientTests
+# Unit tests for PlaidApiClient::link_token_create, item_public_token_exchange,
+# item_remove. Uses FakePlaidHttpClient (no network).
+# --------------------------------------------------------------------------
+add_executable(PlaidApiClientTests
+  tests/test_plaid_api_client.cpp
+  server/plaid/PlaidApiClient.cpp
+)
+tf_register_first_party(PlaidApiClientTests)
+
+if(MSVC)
+  target_compile_options(PlaidApiClientTests PRIVATE /MT)
+endif()
+
+target_include_directories(PlaidApiClientTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(PlaidApiClientTests PRIVATE
+  gtest gtest_main nlohmann_json::nlohmann_json ${_SODIUM_TARGET}
+)
+
+add_test(NAME PlaidApiClientTests COMMAND PlaidApiClientTests)
+
+# --------------------------------------------------------------------------
+# OpenBrowserTests
+# Unit tests for the URL sanitizer and open_browser utility.
+# --------------------------------------------------------------------------
+add_executable(OpenBrowserTests
+  tests/test_open_browser.cpp
+  src/utils/OpenBrowser.cpp
+  src/utils/Logger.h
+)
+tf_register_first_party(OpenBrowserTests)
+
+if(MSVC)
+  target_compile_options(OpenBrowserTests PRIVATE /MT)
+endif()
+
+target_include_directories(OpenBrowserTests PRIVATE
+  "${CMAKE_SOURCE_DIR}"
+)
+
+target_link_libraries(OpenBrowserTests PRIVATE
+  gtest gtest_main
+)
+
+add_test(NAME OpenBrowserTests COMMAND OpenBrowserTests)
 
 # ==========================================================================
 # Phase 4.F additions — V01Migrator (v0.1 → server migration tool)
@@ -1909,6 +1975,9 @@ add_executable(ConsolidationServiceTests
   tests/test_consolidation_service.cpp
   src/services/ConsolidationService.cpp
   src/services/PlaidService.cpp
+  src/services/BackendClient.cpp
+  src/services/http/CurlHttpClient.cpp
+  src/utils/OpenBrowser.cpp
 )
 tf_register_first_party(ConsolidationServiceTests)
 if(MSVC)
@@ -1921,9 +1990,18 @@ target_link_libraries(ConsolidationServiceTests PRIVATE
   gtest
   gtest_main
   nlohmann_json::nlohmann_json
+  ${_SODIUM_TARGET}
 )
 if(WIN32)
-  target_link_libraries(ConsolidationServiceTests PRIVATE crypt32 winhttp advapi32)
+  target_link_libraries(ConsolidationServiceTests PRIVATE crypt32 advapi32 CURL::libcurl)
+elseif(APPLE)
+  target_link_libraries(ConsolidationServiceTests PRIVATE
+    "-framework Security"
+    "-framework CoreFoundation"
+    CURL::libcurl
+  )
+else()
+  target_link_libraries(ConsolidationServiceTests PRIVATE CURL::libcurl)
 endif()
 add_test(NAME ConsolidationServiceTests COMMAND ConsolidationServiceTests)
 

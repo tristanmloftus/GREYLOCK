@@ -8,11 +8,13 @@
 namespace httplib { class SSLServer; }
 class Database;
 namespace tf::audit { class IAuditLog; }
+namespace tf::plaid { class PlaidSyncScheduler; }
 
 namespace tf::data {
 
 void register_accounts_handlers(httplib::SSLServer& server,
                                  Database& db,
-                                 tf::audit::IAuditLog& audit_log);
+                                 tf::audit::IAuditLog& audit_log,
+                                 tf::plaid::PlaidSyncScheduler* plaid_scheduler = nullptr);
 
 } // namespace tf::data

@@ -124,6 +124,15 @@ public:
         int64_t from_unix,
         int64_t to_unix);
 
+    virtual std::optional<std::string> link_token_create(
+        std::string_view client_user_id);
+
+    virtual std::optional<std::string> item_public_token_exchange(
+        std::string_view public_token);
+
+    virtual bool item_remove(
+        std::string_view access_token);
+
 protected:
     // Protected for mock override in tests.
     PlaidApiClient() = default;
