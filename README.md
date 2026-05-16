@@ -63,7 +63,9 @@ The QA-agent protocol (game-tester-style TUI testing, issue
 templates, label conventions) is in
 [docs/QA_PROMPT.md](docs/QA_PROMPT.md). End-to-end Plaid Developer
 setup (signup, credentials, Link flow, env, first sync) is in
-[docs/PLAID_SETUP.md](docs/PLAID_SETUP.md).
+[docs/PLAID_SETUP.md](docs/PLAID_SETUP.md). Project-specific
+operational workflow (phase gates, current state, definition of
+done per work unit) is in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Architecture in one diagram
 
