@@ -13,6 +13,7 @@
 #include "../utils/OpenBrowser.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
 // ---------------------------------------------------------------------------
@@ -53,9 +54,18 @@ public:
         }
         std::string link_token = link_token_it->get<std::string>();
 
-        std::string link_url =
-            "https://cdn.plaid.com/link/v2/stable/link-initialize.html"
-            "?token=" + link_token;
+        // Construct the link URL pointing at OUR backend server's /link
+        // endpoint. The backend serves an HTML page that loads
+        // cdn.plaid.com's JS SDK inside the page. The TUI never opens
+        // cdn.plaid.com directly; OpenBrowser's sanitizer rejects it.
+        const char* backend_url_env = std::getenv("TF_BACKEND_URL");
+        std::string backend_url =
+            (backend_url_env && backend_url_env[0] != '\0')
+                ? std::string(backend_url_env)
+                : std::string("https://localhost:8443");
+        std::string link_url = backend_url +
+            "/link?account_id=" + account_id +
+            "&link_token=" + link_token;
 
         if (!open_browser(link_url)) {
             last_error_ = "initiate_link_flow: failed to open browser";
