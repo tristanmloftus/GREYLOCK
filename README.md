@@ -66,6 +66,8 @@ setup (signup, credentials, Link flow, env, first sync) is in
 [docs/PLAID_SETUP.md](docs/PLAID_SETUP.md). Project-specific
 operational workflow (phase gates, current state, definition of
 done per work unit) is in [docs/WORKFLOW.md](docs/WORKFLOW.md).
+Recovery procedure for malformed env files or leaked secrets is in
+[docs/SECRETS_RECOVERY.md](docs/SECRETS_RECOVERY.md).
 
 ## Architecture in one diagram
 
