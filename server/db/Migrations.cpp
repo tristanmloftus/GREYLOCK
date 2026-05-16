@@ -204,6 +204,47 @@ void M006_account_institution_up(Database& db) {
 }
 
 // ---------------------------------------------------------------------------
+// M007_reimbursements
+//
+// Cross-entity reimbursement tracking (greylock-spec.md §8.11): when a
+// transaction posts to one entity but should be paid by another (e.g.
+// PCC pays for a personal expense, or vice versa), flag it for tracking
+// until resolved.  Status lifecycle: pending → paid | written_off.
+//
+// Foreign keys: source_tx_id references transactions(id); the two
+// entity columns reference entities(id).  amount_cents stored separately
+// from the source transaction so partial reimbursements (rare) and
+// post-settlement edits to the source tx don't silently shift the
+// reimbursement total.
+// ---------------------------------------------------------------------------
+void M007_reimbursements_up(Database& db) {
+    db.exec(
+        "CREATE TABLE reimbursements ("
+        "  id                  TEXT    NOT NULL PRIMARY KEY,"
+        "  source_tx_id        TEXT    NOT NULL,"
+        "  owed_by_entity_id   TEXT    NOT NULL,"
+        "  owed_to_entity_id   TEXT    NOT NULL,"
+        "  amount_cents        INTEGER NOT NULL,"
+        "  status              TEXT    NOT NULL DEFAULT 'pending',"
+        "  note                TEXT    NOT NULL DEFAULT '',"
+        "  created_at_unix     INTEGER NOT NULL,"
+        "  resolved_at_unix    INTEGER,"
+        "  FOREIGN KEY (source_tx_id)      REFERENCES transactions(id),"
+        "  FOREIGN KEY (owed_by_entity_id) REFERENCES entities(id),"
+        "  FOREIGN KEY (owed_to_entity_id) REFERENCES entities(id)"
+        ");"
+    );
+    db.exec(
+        "CREATE INDEX idx_reimbursements_status "
+        "ON reimbursements(status) WHERE status = 'pending';"
+    );
+    db.exec(
+        "CREATE INDEX idx_reimbursements_source_tx "
+        "ON reimbursements(source_tx_id);"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // M001_initial_schema_up
 //
 // Creates the 8 application tables.  schema_migrations is NOT created here —

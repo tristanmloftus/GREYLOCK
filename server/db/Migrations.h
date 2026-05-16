@@ -114,3 +114,9 @@ void M005_plaid_pending_links_up(Database& db);
 // link flow can persist the bank name (greylock-spec.md §8.4 follow-up).
 // ---------------------------------------------------------------------------
 void M006_account_institution_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M007_reimbursements — cross-entity reimbursement tracking
+// (greylock-spec.md §8.11). pending → paid | written_off lifecycle.
+// ---------------------------------------------------------------------------
+void M007_reimbursements_up(Database& db);

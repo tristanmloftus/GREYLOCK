@@ -35,6 +35,7 @@ constexpr Binding kBindings[] = {
     { "g a",          "Accounts"                       },
     { "g t",          "Transactions"                   },
     { "g b",          "Budget"                         },
+    { "g c",          "Categories"                     },
     { "1 / 2",        "Switch entity (Personal/PCC)"   },
     { ":",            "Command palette (fallback)"     },
     { "",             ""                                },

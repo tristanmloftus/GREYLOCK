@@ -73,6 +73,11 @@ enum class CommandId : int {
                                          // view + focuses search box (the
                                          // search box itself lands in a
                                          // later v0.3 task).
+
+    // Appended (greylock-spec.md v2): added at the end so existing IDs
+    // stay stable — see header note "inserting at the end is ABI-safe,
+    // reordering is NOT".
+    SwitchView_Categories         = 18,
 };
 
 // ---------------------------------------------------------------------------
@@ -87,11 +92,11 @@ struct Command {
 };
 
 // ---------------------------------------------------------------------------
-// The full registry, in declaration order.  Size is fixed at 18 — adding
-// a 19th command requires bumping kCommandCount and appending below the
+// The full registry, in declaration order.  Size is fixed at 19 — adding
+// a 20th command requires bumping kCommandCount and appending below the
 // existing entries in CommandRegistry.cpp.
 // ---------------------------------------------------------------------------
-inline constexpr std::size_t kCommandCount = 18;
+inline constexpr std::size_t kCommandCount = 19;
 
 const std::array<Command, kCommandCount>& all_commands();
 

@@ -117,6 +117,7 @@ static Database open_db_with_migrations(const std::string& db_path,
     migrations.register_migration({4, "M004_plaid_sync_state",   M004_plaid_sync_state_up});
     migrations.register_migration({5, "M005_plaid_pending_links", M005_plaid_pending_links_up});
     migrations.register_migration({6, "M006_account_institution", M006_account_institution_up});
+    migrations.register_migration({7, "M007_reimbursements",      M007_reimbursements_up});
     migrations.apply_pending(db);
 
     return db;

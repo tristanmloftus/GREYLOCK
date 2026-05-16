@@ -82,6 +82,10 @@ const std::array<Command, kCommandCount> kCommands = {{
     // is published here so the palette already knows about it.
     { CommandId::Search_Transactions,
       "Search transactions",             "search",        "/"   },
+
+    // Appended after the freeze (greylock-spec.md v2 — Categories view).
+    { CommandId::SwitchView_Categories,
+      "Switch view: Categories",         "categories",    "g c" },
 }};
 
 }  // namespace

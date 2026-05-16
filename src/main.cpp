@@ -35,6 +35,7 @@
 #include "views/AccountsView.h"
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
+#include "views/CategoriesView.h"
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
 #include "views/CommandPalette.h"
@@ -61,19 +62,20 @@ public:
     std::unique_ptr<AccountsView> accounts_view;
     std::unique_ptr<TransactionsView> transactions_view;
     std::unique_ptr<BudgetView> budget_view;
+    std::unique_ptr<CategoriesView> categories_view;
 
     int current_entity = 0;
     int current_tab = 0;
     std::string status_message = "";
-    std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget"};
+    std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget", "Categories"};
 
     // Q14 (greylock-spec.md §11): vim-style `g`+letter top-level
     // navigation.  When the user presses `g`, we enter a one-shot
     // pending state; the next keypress maps to a top-level view
     // (g d → Dashboard, g a → Accounts, g t → Transactions,
-    //  g b → Budget) and resets the state.  Any unrecognised
-    // follow-up just clears the pending state and falls through to
-    // the normal handler chain.
+    //  g b → Budget, g c → Categories) and resets the state. Any
+    // unrecognised follow-up just clears the pending state and falls
+    // through to the normal handler chain.
     bool g_pending = false;
 
     // Task v0.3-1: Dashboard focus state machine.  Routes Tab/Shift-Tab/
@@ -190,6 +192,7 @@ public:
         accounts_view = std::make_unique<AccountsView>(data_store);
         transactions_view = std::make_unique<TransactionsView>(data_store);
         budget_view = std::make_unique<BudgetView>(data_store);
+        categories_view = std::make_unique<CategoriesView>(data_store);
 
         Logger::instance().info("Application starting...");
         if (!data_store.load()) {
@@ -220,6 +223,7 @@ public:
         accounts_view->set_entity_id(entity_id);
         transactions_view->set_entity_id(entity_id);
         budget_view->set_entity_id(entity_id);
+        categories_view->set_entity_id(entity_id);
 
         auto accounts = data_store.get_accounts_for_entity(entity_id);
         if (!accounts.empty()) {
@@ -278,6 +282,8 @@ public:
                 current_tab = 2; focus_.reset(); return;
             case CommandId::SwitchView_Budget:
                 current_tab = 3; focus_.reset(); return;
+            case CommandId::SwitchView_Categories:
+                current_tab = 4; focus_.reset(); return;
 
             case CommandId::SwitchEntity_Personal:
                 if (data_store.entities.size() >= 1) {
@@ -410,6 +416,7 @@ public:
                 case 1: return accounts_view->render();
                 case 2: return transactions_view->render();
                 case 3: return budget_view->render(month);
+                case 4: return categories_view->render();
                 default: return text("Unknown") | color(LED_BLUE);
             }
         };
@@ -1106,6 +1113,7 @@ int main(int argc, char** argv) {
             else if (event == Event::Character('a')) { app.current_tab = 1; app.focus_.reset(); return true; }
             else if (event == Event::Character('t')) { app.current_tab = 2; app.focus_.reset(); return true; }
             else if (event == Event::Character('b')) { app.current_tab = 3; app.focus_.reset(); return true; }
+            else if (event == Event::Character('c')) { app.current_tab = 4; app.focus_.reset(); return true; }
             // Any other key after `g` is just silently ignored — fall
             // through and let downstream handlers see the original event.
         }
