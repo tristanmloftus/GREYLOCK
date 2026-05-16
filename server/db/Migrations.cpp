@@ -162,6 +162,33 @@ void M004_plaid_sync_state_up(Database& db) {
 }
 
 // ---------------------------------------------------------------------------
+// M005_plaid_pending_links_up
+//
+// Short-TTL link_token → (account_id, user_id) mapping. Populated by
+// POST /accounts/:id/link/init when the server mints the Plaid link_token;
+// consumed by POST /accounts/:id/link-plaid when the browser posts the
+// public_token back. Lets the browser-driven Link flow auth without a
+// session bearer (which the browser tab does not carry).
+//
+// Storage: BLAKE2b-256 hash of the link_token (raw bytes are never stored).
+// TTL: 4 hours (matches Plaid's link_token validity window).
+// ---------------------------------------------------------------------------
+void M005_plaid_pending_links_up(Database& db) {
+    db.exec(
+        "CREATE TABLE plaid_pending_links ("
+        "  link_token_hash BLOB    NOT NULL PRIMARY KEY,"
+        "  account_id      TEXT    NOT NULL,"
+        "  user_id         TEXT    NOT NULL,"
+        "  expires_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec(
+        "CREATE INDEX idx_plaid_pending_links_expires "
+        "ON plaid_pending_links(expires_at_unix);"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // M001_initial_schema_up
 //
 // Creates the 8 application tables.  schema_migrations is NOT created here —

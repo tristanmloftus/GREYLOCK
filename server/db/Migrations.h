@@ -99,3 +99,12 @@ void M003_budgets_table_up(Database& db);
 // syncs fetch only new deltas.
 // ---------------------------------------------------------------------------
 void M004_plaid_sync_state_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M005_plaid_pending_links — short-TTL link_token → (account_id, user_id)
+// mapping so the browser-driven Plaid Link flow can complete without a
+// session bearer. The link_token (server-minted from Plaid via /link/init)
+// becomes the auth credential for POST /accounts/:id/link-plaid coming
+// from the in-browser page.
+// ---------------------------------------------------------------------------
+void M005_plaid_pending_links_up(Database& db);

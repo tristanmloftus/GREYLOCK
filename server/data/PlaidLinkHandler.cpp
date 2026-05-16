@@ -8,11 +8,112 @@
 #include "../plaid/PlaidTokenBroker.h"
 
 #include <nlohmann/json.hpp>
+#include <sodium.h>
 
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 using json = nlohmann::json;
+
+namespace {
+
+// BLAKE2b-256 of a string. Matches the hash function used elsewhere
+// (sessions, enrollment tokens). Returns 32 bytes.
+std::vector<unsigned char> blake2b256(const std::string& s) {
+    std::vector<unsigned char> out(crypto_generichash_BYTES); // 32
+    int rc = crypto_generichash(
+        out.data(), out.size(),
+        reinterpret_cast<const unsigned char*>(s.data()), s.size(),
+        nullptr, 0);
+    if (rc != 0) {
+        throw std::runtime_error("blake2b256: crypto_generichash failed");
+    }
+    return out;
+}
+
+int64_t now_unix_pl() {
+    using namespace std::chrono;
+    return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+}
+
+// Insert pending link mapping: blake2b(link_token) → (account_id, user_id, expires).
+// Idempotent on the hash PK — if a row already exists for this link_token, replace it
+// (Plaid never mints the same link_token twice in practice; the REPLACE protects against
+// odd retry shapes).
+void insert_pending_link(Database& db,
+                          const std::string& link_token,
+                          const std::string& account_id,
+                          const std::string& user_id,
+                          int64_t ttl_seconds) {
+    auto hash = blake2b256(link_token);
+    int64_t expires_at = now_unix_pl() + ttl_seconds;
+    auto stmt = db.prepare(
+        "INSERT OR REPLACE INTO plaid_pending_links "
+        "(link_token_hash, account_id, user_id, expires_at_unix) "
+        "VALUES (?, ?, ?, ?);");
+    sqlite3_bind_blob(stmt.get(), 1, hash.data(),
+                      static_cast<int>(hash.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, account_id.data(),
+                      static_cast<int>(account_id.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, user_id.data(),
+                      static_cast<int>(user_id.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 4, expires_at);
+    stmt.step();
+}
+
+// Look up the pending link by link_token. Returns the user_id IF the link_token
+// is valid, not expired, AND maps to the given account_id. Returns nullopt otherwise.
+//
+// Also opportunistically deletes expired rows to keep the table small.
+std::optional<std::string> resolve_pending_link(
+    Database& db,
+    const std::string& link_token,
+    const std::string& account_id)
+{
+    auto hash = blake2b256(link_token);
+    int64_t now = now_unix_pl();
+
+    // Reap expired rows (cheap; runs only on link-plaid attempts).
+    {
+        auto reap = db.prepare(
+            "DELETE FROM plaid_pending_links WHERE expires_at_unix < ?;");
+        sqlite3_bind_int64(reap.get(), 1, now);
+        reap.step();
+    }
+
+    auto stmt = db.prepare(
+        "SELECT user_id, account_id, expires_at_unix FROM plaid_pending_links "
+        "WHERE link_token_hash = ?;");
+    sqlite3_bind_blob(stmt.get(), 1, hash.data(),
+                      static_cast<int>(hash.size()), SQLITE_TRANSIENT);
+    if (stmt.step() != SQLITE_ROW) return std::nullopt;
+
+    const char* user_id_c    = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 0));
+    const char* row_acc_c    = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 1));
+    int64_t     expires_at   = sqlite3_column_int64(stmt.get(), 2);
+
+    if (!user_id_c || !row_acc_c) return std::nullopt;
+    if (expires_at < now) return std::nullopt;
+    std::string row_acc = row_acc_c;
+    if (row_acc != account_id) return std::nullopt;
+
+    return std::string(user_id_c);
+}
+
+// Delete the pending link row after successful exchange (one-shot consumption).
+void consume_pending_link(Database& db, const std::string& link_token) {
+    auto hash = blake2b256(link_token);
+    auto stmt = db.prepare(
+        "DELETE FROM plaid_pending_links WHERE link_token_hash = ?;");
+    sqlite3_bind_blob(stmt.get(), 1, hash.data(),
+                      static_cast<int>(hash.size()), SQLITE_TRANSIENT);
+    stmt.step();
+}
+
+} // anonymous namespace
 
 namespace tf::data {
 
@@ -57,6 +158,21 @@ static void handle_link_init(const httplib::Request& req,
     if (!link_token_opt.has_value()) {
         send_json_pl(res, 500, {{"error", "plaid_link_token_failed"}});
         return;
+    }
+
+    // Stash a short-TTL link_token → (account_id, user_id) mapping so the
+    // in-browser POST /accounts/:id/link-plaid can authenticate via the
+    // link_token alone (the browser tab does not carry the session bearer).
+    // TTL: 4 hours, matching Plaid's link_token validity window.
+    try {
+        insert_pending_link(db, *link_token_opt, account_id, *user_id,
+                            /*ttl_seconds=*/4 * 3600);
+    } catch (const std::exception& ex) {
+        // Non-fatal: in-browser flow degrades to bearer-required; TUI/curl
+        // path still works since it carries the session header.
+        // Log via stderr (no Logger here) and continue.
+        fprintf(stderr,
+            "PlaidLinkHandler: insert_pending_link failed: %s\n", ex.what());
     }
 
     send_json_pl(res, 200, {{"link_token", *link_token_opt}});
@@ -131,7 +247,13 @@ if (!linkToken || !accountId) {
                 statusEl.style.color = '#c07070';
                 linkBtn.disabled = false;
             };
-            xhr.send(JSON.stringify({ public_token: public_token }));
+            // Include link_token in the body so the server can authenticate
+            // this request via the plaid_pending_links mapping (the browser
+            // tab does not carry the session bearer).
+            xhr.send(JSON.stringify({
+                public_token: public_token,
+                link_token: linkToken
+            }));
         },
         onExit: function(err, metadata) {
             if (err != null) {
@@ -166,21 +288,7 @@ static void handle_link_plaid(const httplib::Request& req,
                                tf::plaid::PlaidApiClient& plaid,
                                tf::plaid::PlaidTokenBroker& broker)
 {
-    auto user_id = require_session(req, db);
-    if (!user_id) { send_json_pl(res, 401, {{"error", "unauthorized"}}); return; }
-
     std::string account_id = req.path_params.at("id");
-
-    std::string entity_id = get_account_entity_id_pl(db, account_id);
-    if (entity_id.empty()) {
-        send_json_pl(res, 404, {{"error", "not_found"}});
-        return;
-    }
-
-    if (!user_has_access_to_entity(db, *user_id, entity_id)) {
-        send_json_pl(res, 403, {{"error", "forbidden"}});
-        return;
-    }
 
     json body;
     try { body = json::parse(req.body); }
@@ -189,6 +297,49 @@ static void handle_link_plaid(const httplib::Request& req,
     std::string public_token;
     try { public_token = body.at("public_token").get<std::string>(); }
     catch (...) { send_json_pl(res, 400, {{"error", "missing_public_token"}}); return; }
+
+    // Authentication: two paths.
+    //   (a) Session bearer (TUI / curl path) — require_session returns user_id.
+    //   (b) link_token in the body (browser-driven Plaid Link path) — looked
+    //       up against plaid_pending_links, must match account_id, not expired.
+    //
+    // Either path must produce a user_id; that user must own/be a member of
+    // the account's entity. The link_token path is auto-consumed on success.
+    std::optional<std::string> resolved_user_id;
+    bool used_link_token_auth = false;
+    std::string link_token_from_body;
+
+    if (body.contains("link_token") && body["link_token"].is_string()) {
+        link_token_from_body = body["link_token"].get<std::string>();
+        resolved_user_id =
+            resolve_pending_link(db, link_token_from_body, account_id);
+        if (resolved_user_id) used_link_token_auth = true;
+    }
+
+    if (!resolved_user_id) {
+        // Fall back to bearer session.
+        resolved_user_id = require_session(req, db);
+    }
+
+    if (!resolved_user_id) {
+        send_json_pl(res, 401, {{"error", "unauthorized"}});
+        return;
+    }
+
+    std::string entity_id = get_account_entity_id_pl(db, account_id);
+    if (entity_id.empty()) {
+        send_json_pl(res, 404, {{"error", "not_found"}});
+        return;
+    }
+
+    if (!user_has_access_to_entity(db, *resolved_user_id, entity_id)) {
+        send_json_pl(res, 403, {{"error", "forbidden"}});
+        return;
+    }
+    // From here on, treat `resolved_user_id` as the authenticated principal.
+    // (Keep the existing variable name `user_id` for the rest of the handler
+    // by aliasing — minimizes diff churn below.)
+    auto user_id = resolved_user_id;
 
     auto access_token_opt = plaid.item_public_token_exchange(public_token);
     if (!access_token_opt.has_value()) {
@@ -202,6 +353,11 @@ static void handle_link_plaid(const httplib::Request& req,
     sqlite3_bind_text(upd.get(), 1,
         account_id.data(), static_cast<int>(account_id.size()), SQLITE_STATIC);
     upd.step();
+
+    // One-shot consumption of the link_token mapping if that's how we authed.
+    if (used_link_token_auth && !link_token_from_body.empty()) {
+        consume_pending_link(db, link_token_from_body);
+    }
 
     send_json_pl(res, 200, {{"success", true}});
 }
