@@ -114,9 +114,42 @@ propose it in a comment first; don't invent silently.
 - Don't re-file what Claude has already commented on.
 - Server bugs surfaced from TUI testing → file as `area-sync` or
   `area-auth`; don't separately test the server in isolation.
-- **Sanitize secrets.** Never paste Plaid sandbox keys, TLS
-  material, `TF_MASTER_KEY`, session tokens, or real account
-  numbers into issue text. Redact before filing.
+
+## Secrets discipline (NON-NEGOTIABLE)
+
+**Never paste any value of these into any issue, comment, commit,
+PR description, session writeup, build report, or markdown file —
+even in a private repo:**
+
+- `TF_MASTER_KEY`
+- `PLAID_CLIENT_ID`
+- `PLAID_SECRET`
+- Any `access_token`, `public_token`, `link_token`, `session_token`,
+  `enrollment_token`
+- TOTP seeds or recovery codes
+- Bank credentials, account numbers, routing numbers
+- Any raw hex string ≥32 characters originating from a
+  `*_KEY` or `*_SECRET` env variable
+
+**Rules:**
+
+- **Private repo ≠ private secret.** Every collaborator, every audit
+  log, every accidental visibility flip exposes the content.
+- **Bitwarden Send is the only sanctioned channel** for sharing a
+  secret one-time, out-of-band. Not GitHub. Not Slack. Not chat.
+- **If you generate a key:** write directly to `~/.greylock.env`
+  (`chmod 600`), share via Bitwarden Send, never echo the value
+  again — not in reasoning output, not in status reports, not in
+  build logs.
+- **In writeups, use `<redacted>` or `${TF_MASTER_KEY}`** as
+  placeholders. Never the actual value.
+- **When in doubt, redact.** Cheaper to redact than to leak. There
+  is no scenario where pasting a secret into a GitHub artifact is
+  the right call.
+
+This rule applies to all secrets, not just the ones listed. If a
+value would be bad in the hands of someone outside the family, it
+doesn't go in any repo or issue. Period.
 
 ## Tone
 

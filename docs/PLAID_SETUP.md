@@ -353,9 +353,40 @@ should both be present.
 - **Plaid Dev is rate-limited.** Don't loop sync calls while debugging.
 - **OAuth banks need the redirect URI pre-registered in Plaid dashboard.**
   Step 4. Or pick a non-OAuth bank for the first Link.
-- **Don't paste real `client_id`/`secret`/`master_key` into commit
-  messages, issue bodies, or chat.** The repo pre-commit hook should
-  catch many leak patterns but not all.
+
+## Secrets discipline (READ THIS — NON-NEGOTIABLE)
+
+The following values **never** enter a commit message, issue body,
+PR description, comment, session writeup, build report, status
+update, or any markdown file — even in a private repo:
+
+- `TF_MASTER_KEY` (any value)
+- `PLAID_CLIENT_ID`, `PLAID_SECRET` (Sandbox, Dev, **and** Production)
+- Any `access_token`, `public_token`, `link_token`, `session_token`,
+  `enrollment_token`
+- TOTP seeds, recovery codes
+- Bank credentials, real account numbers, routing numbers
+- Any raw hex string ≥32 characters from a `*_KEY` / `*_SECRET` env
+
+**Bitwarden Send is the only sanctioned channel** for one-time
+out-of-band sharing between Rory and Tristan. Not GitHub. Not Slack.
+Not chat.
+
+**Writeups use placeholders.** When documenting what got generated,
+write `<redacted>` or `${TF_MASTER_KEY}`. Never the actual value.
+
+**Generated → file → forgotten.** When you generate a key, write it
+to `~/.greylock.env` (`chmod 600`), share via Bitwarden Send, then
+never echo the value again — not in chat output, not in status
+reports, not in build logs.
+
+**When in doubt, redact.** There is no scenario where pasting a
+secret into a GitHub artifact is the right call. Cheaper to redact
+than to leak.
+
+The `PCC-SharedOS` pre-commit hook pattern-blocks the obvious
+variable names + raw long-hex strings. The hook is a backstop, not
+a substitute for discipline.
 
 ---
 
