@@ -349,14 +349,19 @@ void PlaidSyncScheduler::upsert_transaction(const std::string& account_id,
             std::chrono::system_clock::now().time_since_epoch()).count());
 
     // INSERT OR REPLACE so duplicate syncs are idempotent.
+    //
+    // description_encrypted: v0.2 stores Plaid's tx.name (merchant /
+    // description) as UTF-8 bytes in the BLOB column. The "_encrypted"
+    // suffix is aspirational — Phase 4.C wraps with envelope encryption.
     auto stmt = db_.prepare(
         "INSERT INTO transactions "
         "  (id, account_id, plaid_transaction_id, posted_at_unix, "
-        "   amount_cents, category, created_at_unix) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "   amount_cents, description_encrypted, category, created_at_unix) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET "
         "  amount_cents = excluded.amount_cents, "
         "  posted_at_unix = excluded.posted_at_unix, "
+        "  description_encrypted = excluded.description_encrypted, "
         "  category = excluded.category;");
 
     sqlite3_bind_text(stmt.get(), 1,
@@ -367,13 +372,19 @@ void PlaidSyncScheduler::upsert_transaction(const std::string& account_id,
         tx.transaction_id.c_str(), static_cast<int>(tx.transaction_id.size()), SQLITE_STATIC);
     sqlite3_bind_int64(stmt.get(), 4, tx.date_unix);
     sqlite3_bind_int64(stmt.get(), 5, tx.amount_cents);
-    if (tx.category.empty()) {
+    if (tx.name.empty()) {
         sqlite3_bind_null(stmt.get(), 6);
     } else {
-        sqlite3_bind_text(stmt.get(), 6,
+        sqlite3_bind_blob(stmt.get(), 6,
+            tx.name.data(), static_cast<int>(tx.name.size()), SQLITE_TRANSIENT);
+    }
+    if (tx.category.empty()) {
+        sqlite3_bind_null(stmt.get(), 7);
+    } else {
+        sqlite3_bind_text(stmt.get(), 7,
             tx.category.c_str(), static_cast<int>(tx.category.size()), SQLITE_STATIC);
     }
-    sqlite3_bind_int64(stmt.get(), 7, now);
+    sqlite3_bind_int64(stmt.get(), 8, now);
 
     int rc = stmt.step();
     if (rc != SQLITE_DONE) {
@@ -391,18 +402,25 @@ void PlaidSyncScheduler::update_transaction(const PlaidTransaction& tx) {
         "UPDATE transactions SET "
         "  amount_cents = ?, "
         "  posted_at_unix = ?, "
+        "  description_encrypted = ?, "
         "  category = ? "
         "WHERE plaid_transaction_id = ?;");
 
     sqlite3_bind_int64(stmt.get(), 1, tx.amount_cents);
     sqlite3_bind_int64(stmt.get(), 2, tx.date_unix);
-    if (tx.category.empty()) {
+    if (tx.name.empty()) {
         sqlite3_bind_null(stmt.get(), 3);
     } else {
-        sqlite3_bind_text(stmt.get(), 3,
+        sqlite3_bind_blob(stmt.get(), 3,
+            tx.name.data(), static_cast<int>(tx.name.size()), SQLITE_TRANSIENT);
+    }
+    if (tx.category.empty()) {
+        sqlite3_bind_null(stmt.get(), 4);
+    } else {
+        sqlite3_bind_text(stmt.get(), 4,
             tx.category.c_str(), static_cast<int>(tx.category.size()), SQLITE_STATIC);
     }
-    sqlite3_bind_text(stmt.get(), 4,
+    sqlite3_bind_text(stmt.get(), 5,
         tx.transaction_id.c_str(), static_cast<int>(tx.transaction_id.size()), SQLITE_STATIC);
 
     stmt.step();
