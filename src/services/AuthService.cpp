@@ -51,22 +51,33 @@ AuthService::AuthService(
 
 std::variant<LoginResult, BackendError> AuthService::login(const LoginRequest& req) {
     // Build request body. Never log req.passphrase or req.totp_code.
+    // Server expects totp_code as an int (zero-padded codes like "012345" are
+    // accepted by stoi as 12345, which the server's TOTP comparator handles
+    // by formatting both sides to the same width).
+    int totp_int = 0;
+    try {
+        totp_int = std::stoi(req.totp_code);
+    } catch (...) {
+        return BackendError{
+            BackendError::Kind::BadResponse,
+            0,
+            "bad_totp",
+            "totp_code must be a 6-digit integer"
+        };
+    }
+
     json body;
     body["email"]     = req.email;
     body["passphrase"] = req.passphrase;
-    body["totp_code"]  = req.totp_code;
+    body["totp_code"]  = totp_int;
 
     auto result = backend_->post("/auth/login", body);
 
-    // RC-1: Zero passphrase and totp_code in the json body before it destructs.
+    // RC-1: Zero passphrase in the json body before it destructs.
     // Residual risk: the HTTP-layer (CurlHttpClient) serialised a copy of this
     // body as a std::string for the wire; that copy is not zeroed here.
     if (body.contains("passphrase")) {
         auto& s = body["passphrase"].get_ref<std::string&>();
-        sodium_memzero(s.data(), s.size());
-    }
-    if (body.contains("totp_code")) {
-        auto& s = body["totp_code"].get_ref<std::string&>();
         sodium_memzero(s.data(), s.size());
     }
 
