@@ -145,6 +145,8 @@ public:
         services.set_secret_store(std::make_shared<DpapiSecretStore>());
 #elif defined(__APPLE__)
         services.set_secret_store(std::make_shared<KeychainSecretStore>());
+#else
+        services.set_secret_store(std::make_shared<FileSecretStore>());
 #endif
 
         data_store.set_storage(storage);
@@ -848,6 +850,8 @@ static CoreServices build_core_services() {
     s.secrets = std::make_shared<DpapiSecretStore>();
 #elif defined(__APPLE__)
     s.secrets = std::make_shared<KeychainSecretStore>();
+#else
+    s.secrets = std::make_shared<FileSecretStore>();
 #endif
 
     return s;

@@ -375,11 +375,13 @@ elseif(APPLE)
     src/services/secret_store/KeychainSecretStore.cpp
   )
 else()
-  # Linux / other POSIX: no secret store implementation in Phase 0.
-  # Add a stub or libsecret implementation in a future phase.
-  set(SECRET_STORE_SOURCES "")
-  message(WARNING "TerminalFinance: No ISecretStore implementation for this platform. "
-                  "SecretStore will be unavailable at runtime.")
+  # Linux / other POSIX (and any non-Windows-non-macOS host): use the
+  # file-based FileSecretStore. Mode-700 dir + mode-600 files; filesystem
+  # permissions are the auth layer. Works on headless hosts (no DBus,
+  # no gnome-keyring required), unlike libsecret.
+  set(SECRET_STORE_SOURCES
+    src/services/secret_store/FileSecretStore.cpp
+  )
 endif()
 
 # --------------------------------------------------------------------------

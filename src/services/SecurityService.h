@@ -18,4 +18,6 @@
 #include "secret_store/DpapiSecretStore.h"
 #elif defined(__APPLE__)
 #include "secret_store/KeychainSecretStore.h"
+#else
+#include "secret_store/FileSecretStore.h"
 #endif
