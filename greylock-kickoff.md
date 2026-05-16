@@ -1,9 +1,24 @@
-# TerminalFinance — UI Interaction & Features Spec
+# Greylock — Kickoff Brief
 
+> **How to use this file:** when an AI coding agent picks up Greylock
+> work, the operator says **"read `greylock-kickoff.md` and follow it"**.
+> Everything the agent needs to ground itself on the project — current
+> state, decisions made, decisions pending, next actions — lives here.
+> If you change a decision, update the relevant `[FILL]` block and add
+> a line to §6 (Decisions log).
+>
 > **Owner:** Rory (UI/UX) + Tristan (engineering).
-> **Status:** Draft — fill in as you go. Claude pre-populated the framing,
-> current state, and the open questions Rory raised on 2026-05-16.
-> Anything tagged **`[FILL]`** is for you to answer.
+> **Status:** Draft. Claude pre-populated the framing, current state,
+> and the open questions Rory raised on 2026-05-16. Anything tagged
+> **`[FILL]`** is for Rory or Tristan to answer.
+>
+> **Agent rules of engagement:**
+> 1. Treat §1 as ground truth, §2 as the current keybinding/layout
+>    snapshot, §3 as proposals awaiting a `[FILL]` decision.
+> 2. §4 is the UX spec to implement once filled in.
+> 3. Don't act on a `[FILL]` until it has a value or §6 records the
+>    call. Don't invent answers. Ask first.
+> 4. Surface every assumption you make in your PR description.
 
 ---
 
