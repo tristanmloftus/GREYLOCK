@@ -78,6 +78,16 @@ enum class CommandId : int {
     // stay stable — see header note "inserting at the end is ABI-safe,
     // reordering is NOT".
     SwitchView_Categories         = 18,
+
+    // v3 + v4 scaffolds (greylock-spec.md §8.12–§8.18).
+    SwitchView_Notes              = 19,
+    SwitchView_Decisions          = 20,
+    SwitchView_Tasks              = 21,
+    SwitchView_Events             = 22,
+    SwitchView_Proposals          = 23,
+    SwitchView_Targets            = 24,
+    SwitchView_Relationships      = 25,
+    SwitchView_RealEstate         = 26,
 };
 
 // ---------------------------------------------------------------------------
@@ -92,11 +102,11 @@ struct Command {
 };
 
 // ---------------------------------------------------------------------------
-// The full registry, in declaration order.  Size is fixed at 19 — adding
-// a 20th command requires bumping kCommandCount and appending below the
-// existing entries in CommandRegistry.cpp.
+// The full registry, in declaration order.  Size is 27 (v1 + v2 + v3/v4
+// scaffolds).  Inserting a new ID at the END is ABI-safe; reordering
+// existing IDs is NOT.
 // ---------------------------------------------------------------------------
-inline constexpr std::size_t kCommandCount = 19;
+inline constexpr std::size_t kCommandCount = 27;
 
 const std::array<Command, kCommandCount>& all_commands();
 

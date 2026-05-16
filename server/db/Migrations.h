@@ -120,3 +120,18 @@ void M006_account_institution_up(Database& db);
 // (greylock-spec.md §8.11). pending → paid | written_off lifecycle.
 // ---------------------------------------------------------------------------
 void M007_reimbursements_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M008_v3_workflow — v3 ontology + workflow backbone
+// (greylock-spec.md §2.6 / §6.3). Tables: actions, edges, notes,
+// note_tags, note_links, decisions, tasks, events.
+// ---------------------------------------------------------------------------
+void M008_v3_workflow_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M009_v4_intelligence — v4 intelligence + acquisition pipeline
+// (greylock-spec.md §2.6 / §6.4). Tables: embeddings, inferences,
+// pending_extractions, targets, relationships, real_estate.
+// LLM/embedding wiring lands separately once Q8/Q10 are answered.
+// ---------------------------------------------------------------------------
+void M009_v4_intelligence_up(Database& db);

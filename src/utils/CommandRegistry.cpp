@@ -86,6 +86,26 @@ const std::array<Command, kCommandCount> kCommands = {{
     // Appended after the freeze (greylock-spec.md v2 — Categories view).
     { CommandId::SwitchView_Categories,
       "Switch view: Categories",         "categories",    "g c" },
+
+    // v3 / v4 scaffolds (greylock-spec.md §8.12–§8.18). Each surface
+    // is keyboard-reachable but currently renders a status-only panel
+    // until the corresponding data flow ships.
+    { CommandId::SwitchView_Notes,
+      "Switch view: Notes",              "notes",         "g n" },
+    { CommandId::SwitchView_Decisions,
+      "Switch view: Decisions",          "decisions",     "g D" },
+    { CommandId::SwitchView_Tasks,
+      "Switch view: Tasks",              "tasks",         "g k" },
+    { CommandId::SwitchView_Events,
+      "Switch view: Events",             "events",        "g e" },
+    { CommandId::SwitchView_Proposals,
+      "Switch view: Proposals inbox",    "proposals",     "g p" },
+    { CommandId::SwitchView_Targets,
+      "Switch view: Targets",            "targets",       "g T" },
+    { CommandId::SwitchView_Relationships,
+      "Switch view: Relationships",      "relationships", "g R" },
+    { CommandId::SwitchView_RealEstate,
+      "Switch view: Real Estate",        "real-estate",   "g r" },
 }};
 
 }  // namespace

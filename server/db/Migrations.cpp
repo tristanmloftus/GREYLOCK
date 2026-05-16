@@ -412,3 +412,255 @@ void M001_initial_schema_up(Database& db) {
         ");"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M008_v3_workflow
+//
+// v3 foundation per greylock-spec.md §2.6 + §6.3:
+//   - actions:    typed audit-trail of every ontology mutation
+//   - edges:      arbitrary typed relationships (multi-purpose graph)
+//   - notes:      one row per markdown file in the vault
+//   - note_tags:  tag fan-out for notes (PK: note_id + tag)
+//   - note_links: parsed wikilink targets (resolved on ingest)
+//   - decisions:  Decision object type
+//   - tasks:      Task object type
+//   - events:     Event object type
+//
+// No FK to a unified objects() table yet — v3 ingestion will introduce
+// that on the next pass. Each table is a flat indexed store today.
+// ---------------------------------------------------------------------------
+void M008_v3_workflow_up(Database& db) {
+    db.exec(
+        "CREATE TABLE actions ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  action_type     TEXT    NOT NULL,"
+        "  actor_user_id   TEXT    NOT NULL,"
+        "  entity_scope    TEXT,"
+        "  payload_json    TEXT    NOT NULL,"
+        "  result_json     TEXT,"
+        "  status          TEXT    NOT NULL DEFAULT 'pending',"
+        "  applied_at_unix INTEGER,"
+        "  created_at_unix INTEGER NOT NULL,"
+        "  proposed_by_inference_id TEXT"
+        ");"
+    );
+    db.exec(
+        "CREATE INDEX idx_actions_status_created "
+        "ON actions(status, created_at_unix);"
+    );
+
+    db.exec(
+        "CREATE TABLE edges ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  from_id         TEXT    NOT NULL,"
+        "  to_id           TEXT    NOT NULL,"
+        "  edge_type       TEXT    NOT NULL,"
+        "  props_json      TEXT,"
+        "  valid_from_unix INTEGER NOT NULL,"
+        "  valid_to_unix   INTEGER,"
+        "  recorded_at_unix INTEGER NOT NULL,"
+        "  superseded_at_unix INTEGER,"
+        "  recorded_by_user_id TEXT NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_edges_from ON edges(from_id, edge_type) WHERE superseded_at_unix IS NULL;");
+    db.exec("CREATE INDEX idx_edges_to   ON edges(to_id,   edge_type) WHERE superseded_at_unix IS NULL;");
+
+    db.exec(
+        "CREATE TABLE notes ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  path            TEXT    UNIQUE NOT NULL,"
+        "  title           TEXT,"
+        "  kind            TEXT    NOT NULL,"
+        "  author_user_id  TEXT    NOT NULL,"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  body_hash_sha256 TEXT   NOT NULL,"
+        "  commit_sha      TEXT,"
+        "  word_count      INTEGER,"
+        "  last_indexed_at_unix INTEGER,"
+        "  created_at_unix INTEGER NOT NULL,"
+        "  updated_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_notes_kind     ON notes(kind);");
+    db.exec("CREATE INDEX idx_notes_scope    ON notes(entity_scope);");
+
+    db.exec(
+        "CREATE TABLE note_tags ("
+        "  note_id TEXT NOT NULL,"
+        "  tag     TEXT NOT NULL,"
+        "  PRIMARY KEY (note_id, tag)"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_note_tags_tag ON note_tags(tag);");
+
+    db.exec(
+        "CREATE TABLE note_links ("
+        "  note_id      TEXT NOT NULL,"
+        "  to_object_id TEXT,"
+        "  raw_target   TEXT NOT NULL,"
+        "  PRIMARY KEY (note_id, raw_target)"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_note_links_to ON note_links(to_object_id) WHERE to_object_id IS NOT NULL;");
+
+    db.exec(
+        "CREATE TABLE decisions ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  title           TEXT    NOT NULL,"
+        "  body_md         TEXT    NOT NULL DEFAULT '',"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  status          TEXT    NOT NULL DEFAULT 'open',"
+        "  outcome         TEXT,"
+        "  decided_by_user_id TEXT,"
+        "  decided_at_unix INTEGER,"
+        "  outcome_due_unix INTEGER,"
+        "  source_note_id  TEXT,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_decisions_status_created ON decisions(status, created_at_unix);");
+
+    db.exec(
+        "CREATE TABLE tasks ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  title           TEXT    NOT NULL,"
+        "  body_md         TEXT    NOT NULL DEFAULT '',"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  status          TEXT    NOT NULL DEFAULT 'open',"      // open | done | cancelled
+        "  assignee_user_id TEXT,"
+        "  due_unix        INTEGER,"
+        "  completed_at_unix INTEGER,"
+        "  source_note_id  TEXT,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_tasks_status_due ON tasks(status, due_unix);");
+
+    db.exec(
+        "CREATE TABLE events ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  title           TEXT    NOT NULL,"
+        "  body_md         TEXT    NOT NULL DEFAULT '',"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  starts_at_unix  INTEGER NOT NULL,"
+        "  ends_at_unix    INTEGER,"
+        "  location        TEXT,"
+        "  source_note_id  TEXT,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_events_starts ON events(starts_at_unix);");
+}
+
+// ---------------------------------------------------------------------------
+// M009_v4_intelligence
+//
+// v4 foundation per greylock-spec.md §2.6 + §6.4:
+//   - embeddings:        per-chunk vectors over notes (and later other objects)
+//   - inferences:        every LLM call logged with prompt hash + redaction tier
+//   - pending_extractions: AI-proposed objects awaiting human confirmation
+//   - targets:           PCC acquisition pipeline targets
+//   - relationships:     people / contacts the principals interact with
+//   - real_estate:       properties owned or evaluated
+//
+// Vectors are stored as BLOB. Embedding model id is recorded per row so a
+// model swap doesn't silently invalidate existing data.
+// ---------------------------------------------------------------------------
+void M009_v4_intelligence_up(Database& db) {
+    db.exec(
+        "CREATE TABLE embeddings ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  source_kind     TEXT    NOT NULL,"           // 'note' | 'tx_description' | ...
+        "  source_id       TEXT    NOT NULL,"
+        "  chunk_index     INTEGER NOT NULL,"
+        "  chunk_text      TEXT    NOT NULL,"
+        "  vector          BLOB    NOT NULL,"
+        "  model_id        TEXT    NOT NULL,"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_embeddings_scope_kind ON embeddings(entity_scope, source_kind);");
+    db.exec("CREATE INDEX idx_embeddings_source     ON embeddings(source_kind, source_id);");
+
+    db.exec(
+        "CREATE TABLE inferences ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  asker_user_id   TEXT    NOT NULL,"
+        "  prompt          TEXT    NOT NULL,"
+        "  prompt_hash     TEXT    NOT NULL,"
+        "  retrieved_refs_json TEXT NOT NULL,"
+        "  model_id        TEXT    NOT NULL,"
+        "  model_location  TEXT    NOT NULL,"   // 'local' | 'api:anthropic' | 'api:openai'
+        "  redaction_tier  TEXT    NOT NULL,"   // 'none' | 'masked' | 'local_only'
+        "  response        TEXT    NOT NULL,"
+        "  feedback_score  INTEGER,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_inferences_asker_created ON inferences(asker_user_id, created_at_unix);");
+
+    db.exec(
+        "CREATE TABLE pending_extractions ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  source_note_id  TEXT    NOT NULL,"
+        "  inference_id    TEXT    NOT NULL,"
+        "  proposed_type   TEXT    NOT NULL,"           // 'task' | 'decision' | 'target' | ...
+        "  proposed_payload_json TEXT NOT NULL,"
+        "  status          TEXT    NOT NULL DEFAULT 'pending'," // pending|confirmed|rejected|edited
+        "  resolved_by_user_id TEXT,"
+        "  resolved_at_unix INTEGER,"
+        "  resulting_object_id TEXT,"
+        "  created_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_pending_extractions_status ON pending_extractions(status, created_at_unix);");
+
+    db.exec(
+        "CREATE TABLE targets ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  name            TEXT    NOT NULL,"
+        "  entity_scope    TEXT    NOT NULL DEFAULT 'pcc',"
+        "  stage           TEXT    NOT NULL DEFAULT 'lead',"  // lead|engaged|loi|diligence|closed|passed
+        "  thesis_md       TEXT    NOT NULL DEFAULT '',"
+        "  size_cents      INTEGER,"
+        "  source_note_id  TEXT,"
+        "  created_at_unix INTEGER NOT NULL,"
+        "  updated_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_targets_stage_updated ON targets(stage, updated_at_unix);");
+
+    db.exec(
+        "CREATE TABLE relationships ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  display_name    TEXT    NOT NULL,"
+        "  kind            TEXT    NOT NULL,"            // 'friend' | 'family' | 'pro' | 'oncall'
+        "  primary_email   TEXT,"
+        "  primary_phone   TEXT,"
+        "  last_contact_unix INTEGER,"
+        "  notes_md        TEXT    NOT NULL DEFAULT '',"
+        "  created_at_unix INTEGER NOT NULL,"
+        "  updated_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_relationships_kind ON relationships(kind);");
+
+    db.exec(
+        "CREATE TABLE real_estate ("
+        "  id              TEXT    PRIMARY KEY,"
+        "  label           TEXT    NOT NULL,"
+        "  address         TEXT,"
+        "  entity_scope    TEXT    NOT NULL,"
+        "  status          TEXT    NOT NULL DEFAULT 'owned',"  // owned|under_contract|evaluated|sold
+        "  acquired_at_unix INTEGER,"
+        "  cost_basis_cents INTEGER,"
+        "  current_value_cents INTEGER,"
+        "  notes_md        TEXT    NOT NULL DEFAULT '',"
+        "  created_at_unix INTEGER NOT NULL,"
+        "  updated_at_unix INTEGER NOT NULL"
+        ");"
+    );
+    db.exec("CREATE INDEX idx_real_estate_status ON real_estate(status);");
+}

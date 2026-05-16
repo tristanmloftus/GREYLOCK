@@ -36,6 +36,7 @@
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
 #include "views/CategoriesView.h"
+#include "views/PlaceholderView.h"
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
 #include "views/CommandPalette.h"
@@ -64,18 +65,36 @@ public:
     std::unique_ptr<BudgetView> budget_view;
     std::unique_ptr<CategoriesView> categories_view;
 
+    // v3 / v4 scaffolded views — schemas are live (M008 + M009), data
+    // flow is the next pass. Each uses a generic PlaceholderView so the
+    // keymap is real even while the surfaces are empty.
+    std::unique_ptr<PlaceholderView> notes_view;
+    std::unique_ptr<PlaceholderView> decisions_view;
+    std::unique_ptr<PlaceholderView> tasks_view;
+    std::unique_ptr<PlaceholderView> events_view;
+    std::unique_ptr<PlaceholderView> proposals_view;
+    std::unique_ptr<PlaceholderView> targets_view;
+    std::unique_ptr<PlaceholderView> relationships_view;
+    std::unique_ptr<PlaceholderView> real_estate_view;
+
     int current_entity = 0;
     int current_tab = 0;
     std::string status_message = "";
+    // Visible top-level tabs (rendered in the strip). v3 / v4 surfaces
+    // are reachable via `g`+letter and the palette but intentionally
+    // omitted from the strip so it doesn't crowd. App.dispatch handles
+    // tab indices 5..12 mapped to the placeholder views below.
     std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget", "Categories"};
 
     // Q14 (greylock-spec.md §11): vim-style `g`+letter top-level
     // navigation.  When the user presses `g`, we enter a one-shot
-    // pending state; the next keypress maps to a top-level view
-    // (g d → Dashboard, g a → Accounts, g t → Transactions,
-    //  g b → Budget, g c → Categories) and resets the state. Any
-    // unrecognised follow-up just clears the pending state and falls
-    // through to the normal handler chain.
+    // pending state; the next keypress maps to a top-level view per
+    // greylock-spec.md §8.1 keymap:
+    //   v1: d/a/t/b/c
+    //   v3: n (Notes) D (Decisions) k (Tasks) e (Events)
+    //   v4: p (Proposals) T (Targets) R (Relationships) r (Real Estate)
+    // Any unrecognised follow-up just clears the pending state and
+    // falls through to the normal handler chain.
     bool g_pending = false;
 
     // Task v0.3-1: Dashboard focus state machine.  Routes Tab/Shift-Tab/
@@ -194,6 +213,42 @@ public:
         budget_view = std::make_unique<BudgetView>(data_store);
         categories_view = std::make_unique<CategoriesView>(data_store);
 
+        // v3 scaffolds.
+        notes_view = std::make_unique<PlaceholderView>(
+            "Notes",
+            "The vault is the input pipe. Markdown files in ~/Greylock/vault/",
+            "v3: schema live (M008). Vault ingestion + auto-commit next.");
+        decisions_view = std::make_unique<PlaceholderView>(
+            "Decisions",
+            "Chronological feed of decisions, with outcome tracking once >90d.",
+            "v3: decisions table live (M008). Detail/outcome flow next.");
+        tasks_view = std::make_unique<PlaceholderView>(
+            "Tasks",
+            "Open / in-progress / done. `c` to complete; due-date sort.",
+            "v3: tasks table live (M008). CRUD + complete flow next.");
+        events_view = std::make_unique<PlaceholderView>(
+            "Events",
+            "Calendar-style list, attendees + linked notes per event.",
+            "v3: events table live (M008). Meeting workflow next.");
+
+        // v4 scaffolds.
+        proposals_view = std::make_unique<PlaceholderView>(
+            "Proposals inbox",
+            "AI-proposed objects awaiting principal confirmation.",
+            "v4: pending_extractions table live (M009). Wired after Q8/Q10.");
+        targets_view = std::make_unique<PlaceholderView>(
+            "Targets",
+            "PCC acquisition pipeline (lead → engaged → LOI → diligence → closed).",
+            "v4: targets table live (M009). Pipeline UX next.");
+        relationships_view = std::make_unique<PlaceholderView>(
+            "Relationships",
+            "People (family, friends, professionals, on-call) with last-contact decay.",
+            "v4: relationships table live (M009).");
+        real_estate_view = std::make_unique<PlaceholderView>(
+            "Real Estate",
+            "Owned / under-contract / evaluated properties + cost basis tracking.",
+            "v4: real_estate table live (M009).");
+
         Logger::instance().info("Application starting...");
         if (!data_store.load()) {
             Logger::instance().warning("No existing data file found, creating new");
@@ -284,6 +339,22 @@ public:
                 current_tab = 3; focus_.reset(); return;
             case CommandId::SwitchView_Categories:
                 current_tab = 4; focus_.reset(); return;
+            case CommandId::SwitchView_Notes:
+                current_tab = 5;  focus_.reset(); return;
+            case CommandId::SwitchView_Decisions:
+                current_tab = 6;  focus_.reset(); return;
+            case CommandId::SwitchView_Tasks:
+                current_tab = 7;  focus_.reset(); return;
+            case CommandId::SwitchView_Events:
+                current_tab = 8;  focus_.reset(); return;
+            case CommandId::SwitchView_Proposals:
+                current_tab = 9;  focus_.reset(); return;
+            case CommandId::SwitchView_Targets:
+                current_tab = 10; focus_.reset(); return;
+            case CommandId::SwitchView_Relationships:
+                current_tab = 11; focus_.reset(); return;
+            case CommandId::SwitchView_RealEstate:
+                current_tab = 12; focus_.reset(); return;
 
             case CommandId::SwitchEntity_Personal:
                 if (data_store.entities.size() >= 1) {
@@ -412,11 +483,19 @@ public:
                 }
             }
             switch (current_tab) {
-                case 0: return dashboard_view->render(month, &focus_);
-                case 1: return accounts_view->render();
-                case 2: return transactions_view->render();
-                case 3: return budget_view->render(month);
-                case 4: return categories_view->render();
+                case 0:  return dashboard_view->render(month, &focus_);
+                case 1:  return accounts_view->render();
+                case 2:  return transactions_view->render();
+                case 3:  return budget_view->render(month);
+                case 4:  return categories_view->render();
+                case 5:  return notes_view->render();
+                case 6:  return decisions_view->render();
+                case 7:  return tasks_view->render();
+                case 8:  return events_view->render();
+                case 9:  return proposals_view->render();
+                case 10: return targets_view->render();
+                case 11: return relationships_view->render();
+                case 12: return real_estate_view->render();
                 default: return text("Unknown") | color(LED_BLUE);
             }
         };
@@ -434,7 +513,13 @@ public:
             }
         }
 
-        // Build view tabs
+        // Build view tabs.  v3/v4 surfaces (current_tab >= 5) are not
+        // members of the visible strip; we append a single "[•] <name>"
+        // chip so the bar still names the open view.
+        static const std::vector<std::string> kHiddenViewNames = {
+            "Notes", "Decisions", "Tasks", "Events",
+            "Proposals", "Targets", "Relationships", "Real Estate"
+        };
         Elements view_tabs;
         for (size_t i = 0; i < tabs.size(); ++i) {
             if (i == (size_t)current_tab) {
@@ -445,15 +530,32 @@ public:
                 view_tabs.push_back(text(" " + tabs[i] + " ") | color(LED_BLUE_DIM));
             }
         }
+        if (current_tab >= (int)tabs.size()) {
+            size_t hidden_idx = (size_t)current_tab - tabs.size();
+            if (hidden_idx < kHiddenViewNames.size()) {
+                view_tabs.push_back(text("  [•]") | color(LED_BLUE));
+                view_tabs.push_back(text(" " + kHiddenViewNames[hidden_idx] + " ")
+                                    | color(LED_BLUE) | bold);
+            }
+        }
 
         // Task v0.3-4: status bar is now a class (StatusBar) that owns
         // the two-row layout.  v0.3-1 left context_hints() empty; v0.3-5
         // will populate it.  The StatusBar reads from focus_ on every
         // render so additive changes don't churn this call site.
-        const std::string current_view_name =
-            (current_tab >= 0 && current_tab < (int)tabs.size())
-                ? tabs[(size_t)current_tab]
-                : std::string("Unknown");
+        std::string current_view_name;
+        if (current_tab >= 0 && current_tab < (int)tabs.size()) {
+            current_view_name = tabs[(size_t)current_tab];
+        } else if (current_tab >= (int)tabs.size()) {
+            const size_t hidden_idx = (size_t)current_tab - tabs.size();
+            if (hidden_idx < kHiddenViewNames.size()) {
+                current_view_name = kHiddenViewNames[hidden_idx];
+            } else {
+                current_view_name = "Unknown";
+            }
+        } else {
+            current_view_name = "Unknown";
+        }
         Element status_bar_element = status_bar_.render(focus_, current_view_name);
 
         // ----------------------------------------------------------------
@@ -1109,11 +1211,22 @@ int main(int argc, char** argv) {
         // as a fallback for users who haven't learned `g`+letter yet.
         if (app.g_pending) {
             app.g_pending = false;
-            if      (event == Event::Character('d')) { app.current_tab = 0; app.focus_.reset(); return true; }
-            else if (event == Event::Character('a')) { app.current_tab = 1; app.focus_.reset(); return true; }
-            else if (event == Event::Character('t')) { app.current_tab = 2; app.focus_.reset(); return true; }
-            else if (event == Event::Character('b')) { app.current_tab = 3; app.focus_.reset(); return true; }
-            else if (event == Event::Character('c')) { app.current_tab = 4; app.focus_.reset(); return true; }
+            // v1 surfaces
+            if      (event == Event::Character('d')) { app.current_tab = 0;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('a')) { app.current_tab = 1;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('t')) { app.current_tab = 2;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('b')) { app.current_tab = 3;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('c')) { app.current_tab = 4;  app.focus_.reset(); return true; }
+            // v3 surfaces (greylock-spec.md §8.1 keymap)
+            else if (event == Event::Character('n')) { app.current_tab = 5;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('D')) { app.current_tab = 6;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('k')) { app.current_tab = 7;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('e')) { app.current_tab = 8;  app.focus_.reset(); return true; }
+            // v4 surfaces
+            else if (event == Event::Character('p')) { app.current_tab = 9;  app.focus_.reset(); return true; }
+            else if (event == Event::Character('T')) { app.current_tab = 10; app.focus_.reset(); return true; }
+            else if (event == Event::Character('R')) { app.current_tab = 11; app.focus_.reset(); return true; }
+            else if (event == Event::Character('r')) { app.current_tab = 12; app.focus_.reset(); return true; }
             // Any other key after `g` is just silently ignored — fall
             // through and let downstream handlers see the original event.
         }
