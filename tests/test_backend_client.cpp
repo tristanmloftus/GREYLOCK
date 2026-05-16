@@ -3,7 +3,7 @@
 // Unit + integration tests for BackendClient (Phase 2.C).
 //
 // Unit tests use FakeHttpClient — no network required.
-// Integration test (Healthz_LiveRoundTrip) forks+execs TerminalFinanceServer
+// Integration test (Healthz_LiveRoundTrip) forks+execs greylock-server
 // on a fixed ephemeral-ish port (19843), polls /healthz via BackendClient
 // until the server is up, asserts healthz() returns true, then SIGTERMs the
 // server.
@@ -61,7 +61,7 @@ using namespace std::chrono_literals;
 #endif
 
 #ifndef TF_SERVER_BIN
-#  define TF_SERVER_BIN "./TerminalFinanceServer"
+#  define TF_SERVER_BIN "./greylock-server"
 #endif
 
 static const std::string kTestCert  = TF_FIXTURES_DIR "/test-cert.pem";
@@ -282,7 +282,7 @@ TEST(BackendClientTest, Construction_AcceptsHttpsUrl) {
 // --------------------------------------------------------------------------
 // Integration test: Healthz_LiveRoundTrip
 // --------------------------------------------------------------------------
-// Launches TerminalFinanceServer as a subprocess on port 19843, polls
+// Launches greylock-server as a subprocess on port 19843, polls
 // healthz() until the server responds (up to 5 seconds), asserts true, then
 // SIGTERMs the server.  POSIX-only.
 // --------------------------------------------------------------------------
@@ -357,7 +357,7 @@ TEST_F(LiveServerFixture, Healthz_LiveRoundTrip) {
     }
 
     ASSERT_TRUE(server_ready)
-        << "TerminalFinanceServer did not become healthy on "
+        << "greylock-server did not become healthy on "
         << base_url() << "/healthz within "
         << (kMaxAttempts * kPollInterval.count()) << " ms. "
         << "Check that the server binary exists at: " << kServerBin;

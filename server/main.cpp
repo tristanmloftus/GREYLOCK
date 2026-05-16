@@ -116,6 +116,7 @@ static Database open_db_with_migrations(const std::string& db_path,
     migrations.register_migration({3, "M003_budgets_table",      M003_budgets_table_up});
     migrations.register_migration({4, "M004_plaid_sync_state",   M004_plaid_sync_state_up});
     migrations.register_migration({5, "M005_plaid_pending_links", M005_plaid_pending_links_up});
+    migrations.register_migration({6, "M006_account_institution", M006_account_institution_up});
     migrations.apply_pending(db);
 
     return db;
@@ -324,7 +325,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Database opened with master key: "
               << (master_key_hex.has_value() ? "yes" : "no") << "\n";
 
-    std::cout << "TerminalFinance server v0.2\n"
+    std::cout << "Greylock server v0.2\n"
               << "  bind_addr : " << cfg.bind_addr << "\n"
               << "  port      : " << cfg.port      << "\n"
               << "  cert_path : " << cfg.cert_path << "\n"

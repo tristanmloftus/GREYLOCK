@@ -1,7 +1,7 @@
 // PlaidService.cpp — v0.2 server-mediated Plaid implementation.
 //
 // The TUI never holds a Plaid access_token.  All Plaid operations are
-// proxied through the TerminalFinance backend server, which holds the
+// proxied through the Greylock backend server, which holds the
 // token encrypted via PlaidTokenBroker.
 //
 // F-1 / F-2: No plaintext token is handled in this file.  If you add a log
@@ -17,7 +17,7 @@
 #include <thread>
 
 // ---------------------------------------------------------------------------
-// ServerPlaidService — forwards Plaid operations to the TerminalFinance server.
+// ServerPlaidService — forwards Plaid operations to the Greylock server.
 // ---------------------------------------------------------------------------
 class ServerPlaidService : public IPlaidService {
 public:

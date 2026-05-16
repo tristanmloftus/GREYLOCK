@@ -26,20 +26,30 @@ struct Binding {
     const char* description;
 };
 
-// Static cheat sheet.  Order matches the v0.3-4 task brief's mockup.
+// Static cheat sheet, sectioned by purpose. Top-level navigation is
+// vim-style `g`+letter (greylock-spec.md Q14); per-view interaction
+// stays on Tab / hjkl / Enter. Section dividers render as blank rows.
 constexpr Binding kBindings[] = {
-    { "Tab",        "Switch view forward"            },
-    { "Shift-Tab",  "Switch view backward"           },
-    { "1-2",        "Switch entity"                  },
-    { "h j k l",    "Move focus left / down / up / right" },
-    { "Enter",      "Drill into focused widget"      },
-    { "Esc",        "Back / close"                    },
-    { ":",          "Command palette"                },
-    { "?",          "This help"                      },
-    { "q",          "Quit"                           },
+    { "",             "── Top-level navigation"        },
+    { "g d",          "Dashboard"                      },
+    { "g a",          "Accounts"                       },
+    { "g t",          "Transactions"                   },
+    { "g b",          "Budget"                         },
+    { "1 / 2",        "Switch entity (Personal/PCC)"   },
+    { ":",            "Command palette (fallback)"     },
+    { "",             ""                                },
+    { "",             "── Within a view"               },
+    { "Tab / S-Tab",  "Cycle focus"                    },
+    { "h j k l",      "Move focus L/D/U/R"             },
+    { "Enter",        "Drill into focused widget"      },
+    { "Esc",          "Back / close"                   },
+    { "",             ""                                },
+    { "",             "── Global"                      },
+    { "?",            "This help"                      },
+    { "q",            "Quit"                           },
 };
 
-constexpr int kOverlayWidth = 52;
+constexpr int kOverlayWidth = 56;
 
 }  // namespace
 

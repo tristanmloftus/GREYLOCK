@@ -1,4 +1,4 @@
-// Integration test: TerminalFinanceServer /healthz endpoint.
+// Integration test: greylock-server /healthz endpoint.
 //
 // Test strategy:
 //   - A ServerHealthzTest fixture boots a Server instance in a background

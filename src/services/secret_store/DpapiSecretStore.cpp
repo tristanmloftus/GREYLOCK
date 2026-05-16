@@ -22,7 +22,7 @@ bool DpapiSecretStore::put(std::string_view key, std::span<const std::byte> valu
         return false;
     }
 
-    // Persist the ciphertext into HKCU\Software\TerminalFinance\Tokens.
+    // Persist the ciphertext into HKCU\Software\Greylock.okens.
     HKEY hKey;
     DWORD disp;
     if (RegCreateKeyExA(HKEY_CURRENT_USER, kRegistrySubkey, 0, NULL,

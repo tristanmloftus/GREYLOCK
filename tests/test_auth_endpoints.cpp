@@ -1,6 +1,6 @@
 // tests/test_auth_endpoints.cpp — Phase 3 auth endpoint integration tests.
 //
-// Launches TerminalFinanceServer as a subprocess (port 19844), drives the
+// Launches greylock-server as a subprocess (port 19844), drives the
 // full auth flow via CurlHttpClient:
 //
 //   1. Mint enrollment token (via --mint-enrollment-token flag on the binary)
@@ -52,7 +52,7 @@ using namespace std::chrono_literals;
 #endif
 
 #ifndef TF_SERVER_BIN
-#  define TF_SERVER_BIN "./TerminalFinanceServer"
+#  define TF_SERVER_BIN "./greylock-server"
 #endif
 
 static const std::string kTestCert  = TF_FIXTURES_DIR "/test-cert.pem";

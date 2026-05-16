@@ -346,7 +346,7 @@ static void handle_enroll(const httplib::Request& req,
         // Step 7: Commit everything atomically.
         db.exec("COMMIT;");
 
-        std::string uri = make_totp_provisioning_uri(email_str, "TerminalFinance",
+        std::string uri = make_totp_provisioning_uri(email_str, "Greylock",
                                                       totp_secret);
 
         emit_audit(audit_log, ts, user_id, "system", "", user_id, "user",

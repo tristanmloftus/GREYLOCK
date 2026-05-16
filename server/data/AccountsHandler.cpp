@@ -78,7 +78,7 @@ static void emit_audit_acc(tf::audit::IAuditLog& log,
 
 // Serialize an account row — NEVER includes encrypted_token.
 // Columns: id, entity_id, name, kind, balance_cents, plaid_item_id,
-//          plaid_account_id, is_plaid_linked, created_at_unix
+//          plaid_account_id, is_plaid_linked, created_at_unix, institution
 static json account_row_to_json(sqlite3_stmt* stmt) {
     json obj;
     const char* id        = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
@@ -90,6 +90,7 @@ static json account_row_to_json(sqlite3_stmt* stmt) {
     const char* plaid_acct  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
     int is_plaid_linked     = sqlite3_column_int(stmt, 7);
     int64_t created         = sqlite3_column_int64(stmt, 8);
+    const char* institution = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
 
     obj["id"]              = id        ? id        : "";
     obj["entity_id"]       = entity_id ? entity_id : "";
@@ -100,6 +101,7 @@ static json account_row_to_json(sqlite3_stmt* stmt) {
     obj["plaid_account_id"]= plaid_acct ? json(plaid_acct) : json(nullptr);
     obj["is_plaid_linked"] = (is_plaid_linked != 0);
     obj["created_at_unix"] = created;
+    obj["institution"]     = institution ? institution : "";
     // IMPORTANT: encrypted_token is deliberately NOT included.
     return obj;
 }
@@ -132,7 +134,7 @@ static void handle_list_accounts(const httplib::Request& req,
 
     auto stmt = db.prepare(
         "SELECT id, entity_id, name, kind, balance_cents, plaid_item_id, "
-        "       plaid_account_id, is_plaid_linked, created_at_unix "
+        "       plaid_account_id, is_plaid_linked, created_at_unix, institution "
         "FROM accounts WHERE entity_id = ? ORDER BY created_at_unix ASC;"
     );
     sqlite3_bind_text(stmt.get(), 1,
@@ -169,7 +171,7 @@ static void handle_get_account(const httplib::Request& req,
 
     auto stmt = db.prepare(
         "SELECT id, entity_id, name, kind, balance_cents, plaid_item_id, "
-        "       plaid_account_id, is_plaid_linked, created_at_unix "
+        "       plaid_account_id, is_plaid_linked, created_at_unix, institution "
         "FROM accounts WHERE id = ?;"
     );
     sqlite3_bind_text(stmt.get(), 1,
@@ -311,7 +313,7 @@ static void handle_update_account(const httplib::Request& req,
 
     auto sel = db.prepare(
         "SELECT id, entity_id, name, kind, balance_cents, plaid_item_id, "
-        "       plaid_account_id, is_plaid_linked, created_at_unix "
+        "       plaid_account_id, is_plaid_linked, created_at_unix, institution "
         "FROM accounts WHERE id = ?;"
     );
     sqlite3_bind_text(sel.get(), 1,

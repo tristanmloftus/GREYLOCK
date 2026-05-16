@@ -140,7 +140,7 @@ private:
 
 // Factory: returns StubPlaidService when use_stub=true or backend is null.
 // Production path (use_stub=false) returns a server-mediated implementation
-// that calls the TerminalFinance backend via BackendClient.
+// that calls the Greylock backend via BackendClient.
 std::shared_ptr<IPlaidService> create_plaid_service(bool use_stub = false);
 std::shared_ptr<IPlaidService> create_plaid_service(
     std::shared_ptr<class BackendClient> backend);

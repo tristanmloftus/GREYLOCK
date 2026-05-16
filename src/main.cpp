@@ -353,10 +353,10 @@ public:
                 return;
 
             case CommandId::Logout:
-                status_message = "Logout: run TerminalFinance --logout from CLI.";
+                status_message = "Logout: run greylock --logout from CLI.";
                 return;
             case CommandId::Whoami:
-                status_message = "Whoami: run TerminalFinance --whoami from CLI.";
+                status_message = "Whoami: run greylock --whoami from CLI.";
                 return;
             case CommandId::Refresh:
                 status_message = "Refresh: backend sync not wired in v0.3-4.";
@@ -881,7 +881,7 @@ int main(int argc, char** argv) {
 
         if (flag == "--enroll") {
             if (argc < 3) {
-                std::cerr << "Usage: TerminalFinance --enroll <token>" << std::endl;
+                std::cerr << "Usage: greylock --enroll <token>" << std::endl;
                 return 1;
             }
             std::string enroll_token(argv[2]);
@@ -934,7 +934,7 @@ int main(int argc, char** argv) {
 
         if (flag == "--migrate-from-local") {
             if (argc < 3) {
-                std::cerr << "Usage: TerminalFinance --migrate-from-local <path-to-v0.1-json>" << std::endl;
+                std::cerr << "Usage: greylock --migrate-from-local <path-to-v0.1-json>" << std::endl;
                 return 1;
             }
             std::string migrate_path(argv[2]);
@@ -950,7 +950,7 @@ int main(int argc, char** argv) {
         }
 
         std::cerr << "Unknown flag: " << flag << "\n"
-                  << "Usage: TerminalFinance [--enroll <token>|--login|--logout|--whoami|--migrate-from-local <path>]"
+                  << "Usage: greylock [--enroll <token>|--login|--logout|--whoami|--migrate-from-local <path>]"
                   << std::endl;
         return 1;
     }
@@ -975,7 +975,7 @@ int main(int argc, char** argv) {
         if (email.empty()) {
             Logger::instance().warning(
                 "TF_USER_EMAIL is not set; auth gate is bypassed. "
-                "Run with TF_USER_EMAIL=<email> ./TerminalFinance to enable session-gated mode. "
+                "Run with TF_USER_EMAIL=<email> ./greylock to enable session-gated mode. "
                 "v0.2 default falls back to v0.1 unauthenticated TUI behavior.");
         }
     }

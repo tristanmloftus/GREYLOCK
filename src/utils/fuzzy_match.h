@@ -13,7 +13,7 @@
 // This file is a faithful reimplementation of the canonical algorithm,
 // adapted to:
 //   1. C++17 std::string_view interfaces (the original takes const char*).
-//   2. The tf::utils namespace, so callers in TerminalFinance read
+//   2. The tf::utils namespace, so callers in Greylock read
 //      `tf::utils::fuzzy_match(...)` rather than a globally-scoped name.
 //   3. A pure-header packaging (the upstream is also header-only).
 //

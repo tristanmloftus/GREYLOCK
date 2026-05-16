@@ -70,7 +70,7 @@ static Account json_to_account(const json& j) {
     // Server returns balance_cents (integer). Convert to double.
     int64_t cents = j.value("balance_cents", int64_t{0});
     a.balance     = static_cast<double>(cents) / 100.0;
-    a.institution = "";
+    a.institution = j.value("institution", "");
     // plaid_item_id may be null in the JSON — treat null as empty string.
     if (j.contains("plaid_item_id") && j["plaid_item_id"].is_string()) {
         a.plaid_item_id = j["plaid_item_id"].get<std::string>();

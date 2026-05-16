@@ -12,7 +12,7 @@
 // "plaid_access_token_<id>"). TearDown() removes every registered key, so test
 // items are cleaned up even on assertion failure.
 //
-// On Windows the DpapiSecretStore uses HKCU\Software\TerminalFinance\Tokens. Tests
+// On Windows the DpapiSecretStore uses HKCU\Software\Greylock.Tokens. Tests
 // use the "tf-test-" prefix on all value names; no registry subkey override is needed
 // because the prefix is a sufficient safety belt.
 //

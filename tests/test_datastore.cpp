@@ -572,7 +572,7 @@ TEST_F(DataStoreTest, ConfigManagerSingleton) {
 // ---------------------------------------------------------------------------
 // PlaidService tests — v0.2 account_id-based interface.
 // The TUI never sees a Plaid access_token; all operations are account_id-keyed
-// and proxied through the TerminalFinance server (Q1=A).
+// and proxied through the Greylock server (Q1=A).
 // ---------------------------------------------------------------------------
 
 TEST_F(DataStoreTest, PlaidServiceStubCreation) {

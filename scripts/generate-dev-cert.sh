@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# generate-dev-cert.sh — Mint a local dev TLS cert for TerminalFinanceServer.
+# generate-dev-cert.sh — Mint a local dev TLS cert for greylock-server.
 #
 # Prerequisites:
 #   macOS:   brew install mkcert nss   (nss for Firefox/NSS trust; optional)
@@ -42,8 +42,8 @@ echo "  ${DEV_DIR}/cert.pem"
 echo "  ${DEV_DIR}/key.pem"
 echo ""
 echo "Boot the server:"
-echo "  cmake --build build --target TerminalFinanceServer"
-echo "  ./build/TerminalFinanceServer"
+echo "  cmake --build build --target greylock-server"
+echo "  ./build/greylock-server"
 echo ""
 echo "Smoke test:"
 echo "  curl https://localhost:8443/healthz"

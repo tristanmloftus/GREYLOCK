@@ -189,6 +189,21 @@ void M005_plaid_pending_links_up(Database& db) {
 }
 
 // ---------------------------------------------------------------------------
+// M006_account_institution
+//
+// Adds the `institution` text column to accounts so the link flow can
+// persist the bank name from Plaid Link's onSuccess metadata.  Pre-existing
+// rows get the empty string and can be backfilled by re-linking or by a
+// future /institutions/get_by_id call (not yet wired).
+// ---------------------------------------------------------------------------
+void M006_account_institution_up(Database& db) {
+    db.exec(
+        "ALTER TABLE accounts "
+        "ADD COLUMN institution TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // M001_initial_schema_up
 //
 // Creates the 8 application tables.  schema_migrations is NOT created here —

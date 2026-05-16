@@ -189,7 +189,7 @@ static void handle_link_page(const httplib::Request& req,
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Link Bank Account - TerminalFinance</title>
+<title>Link Bank Account - Greylock</title>
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <style>
 * { box-sizing: border-box; }
@@ -208,7 +208,7 @@ p { margin: 0 0 1.5rem; font-size: 0.9rem; color: #8888a0; }
 <body>
 <div class="card">
 <h1>Connect Your Bank</h1>
-<p>Securely link your financial institution to TerminalFinance.</p>
+<p>Securely link your financial institution to Greylock.</p>
 <div id="status"></div>
 <button id="link-btn" class="btn">Open Plaid Link</button>
 </div>
@@ -250,9 +250,16 @@ if (!linkToken || !accountId) {
             // Include link_token in the body so the server can authenticate
             // this request via the plaid_pending_links mapping (the browser
             // tab does not carry the session bearer).
+            // institution_name + institution_id come from Plaid's onSuccess
+            // metadata so the server can persist them without an extra
+            // /institutions/get_by_id round-trip.
+            var instName = (metadata && metadata.institution && metadata.institution.name) || '';
+            var instId   = (metadata && metadata.institution && metadata.institution.institution_id) || '';
             xhr.send(JSON.stringify({
                 public_token: public_token,
-                link_token: linkToken
+                link_token: linkToken,
+                institution_name: instName,
+                institution_id: instId
             }));
         },
         onExit: function(err, metadata) {
@@ -349,10 +356,28 @@ static void handle_link_plaid(const httplib::Request& req,
 
     broker.store_token(account_id, *access_token_opt);
 
-    auto upd = db.prepare("UPDATE accounts SET is_plaid_linked=1 WHERE id=?;");
-    sqlite3_bind_text(upd.get(), 1,
-        account_id.data(), static_cast<int>(account_id.size()), SQLITE_STATIC);
-    upd.step();
+    // Persist the institution name that the browser captured from Plaid
+    // Link's onSuccess metadata. Falls back to leaving the column empty
+    // if the browser didn't send one (older Plaid Link clients).
+    std::string institution_name;
+    if (body.contains("institution_name") && body["institution_name"].is_string()) {
+        institution_name = body["institution_name"].get<std::string>();
+    }
+    if (!institution_name.empty()) {
+        auto upi = db.prepare(
+            "UPDATE accounts SET is_plaid_linked=1, institution=? WHERE id=?;");
+        sqlite3_bind_text(upi.get(), 1,
+            institution_name.data(), static_cast<int>(institution_name.size()),
+            SQLITE_STATIC);
+        sqlite3_bind_text(upi.get(), 2,
+            account_id.data(), static_cast<int>(account_id.size()), SQLITE_STATIC);
+        upi.step();
+    } else {
+        auto upd = db.prepare("UPDATE accounts SET is_plaid_linked=1 WHERE id=?;");
+        sqlite3_bind_text(upd.get(), 1,
+            account_id.data(), static_cast<int>(account_id.size()), SQLITE_STATIC);
+        upd.step();
+    }
 
     // One-shot consumption of the link_token mapping if that's how we authed.
     if (used_link_token_auth && !link_token_from_body.empty()) {

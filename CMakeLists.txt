@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-project(TerminalFinance)
+project(Greylock)
 
 # Use C++20 for modern features (Concepts, Ranges, etc.)
 set(CMAKE_CXX_STANDARD 20)
@@ -24,7 +24,7 @@ FetchContent_Declare(googletest
   GIT_TAG v1.14.0
 )
 
-# cpp-httplib: header-only C++ HTTP/HTTPS library used by TerminalFinanceServer.
+# cpp-httplib: header-only C++ HTTP/HTTPS library used by greylock-server.
 # HTTPS support requires OpenSSL (detected below) and the compile definition
 # CPPHTTPLIB_OPENSSL_SUPPORT (added to the server targets).
 # Using v0.18.5 which is the version specified in the plan.  cpp-httplib
@@ -56,7 +56,7 @@ endif()
 # reliable. This also turns the Release config into an effective Debug build,
 # which is intentional — coverage runs are not for shipping artifacts.
 #
-# Only first-party targets (TerminalFinance, TerminalFinanceServer, tf_widgets,
+# Only first-party targets (greylock, greylock-server, tf_widgets,
 # and every *Tests executable) are instrumented. FetchContent dependencies
 # (FTXUI, gtest, cpp-httplib, nlohmann/json) are deliberately NOT instrumented
 # so their coverage numbers don't pollute the project gate.
@@ -416,7 +416,7 @@ set(CRYPTO_SOURCES
 #
 # Pure rendering helpers that take primitive parameters and return an
 # ftxui::Element / Component.  Compiled as an OBJECT library so:
-#   1. TerminalFinance links the object files directly (no archive overhead).
+#   1. greylock links the object files directly (no archive overhead).
 #   2. WidgetSnapshotTests can link the same object files without pulling in
 #      main.cpp or any DataStore/BackendClient state.
 # --------------------------------------------------------------------------
@@ -439,7 +439,7 @@ enable_testing()
 # --------------------------------------------------------------------------
 # Main executable
 # --------------------------------------------------------------------------
-add_executable(TerminalFinance
+add_executable(greylock
   src/main.cpp
   src/views/DashboardView.cpp
   src/views/FocusController.cpp
@@ -453,9 +453,9 @@ add_executable(TerminalFinance
   ${COMMON_SOURCES}
   $<TARGET_OBJECTS:tf_widgets>
 )
-tf_register_first_party(TerminalFinance)
+tf_register_first_party(greylock)
 
-target_link_libraries(TerminalFinance PRIVATE
+target_link_libraries(greylock PRIVATE
     ftxui::screen
     ftxui::dom
     ftxui::component
@@ -467,16 +467,16 @@ if(WIN32)
   # winhttp removed: PlaidService no longer uses WinHTTP; all HTTP goes through
   # CurlHttpClient. crypt32 and advapi32 remain for DpapiSecretStore.
   # Verify with: grep -r winhttp src/ -- should return nothing.
-  target_link_libraries(TerminalFinance PRIVATE crypt32 advapi32 CURL::libcurl)
+  target_link_libraries(greylock PRIVATE crypt32 advapi32 CURL::libcurl)
 elseif(APPLE)
-  target_link_libraries(TerminalFinance PRIVATE
+  target_link_libraries(greylock PRIVATE
     "-framework Security"
     "-framework CoreFoundation"
     CURL::libcurl
   )
 else()
   # Linux / other POSIX: only CURL needed; no platform-specific frameworks.
-  target_link_libraries(TerminalFinance PRIVATE CURL::libcurl)
+  target_link_libraries(greylock PRIVATE CURL::libcurl)
 endif()
 
 # --------------------------------------------------------------------------
@@ -608,7 +608,7 @@ target_link_libraries(CryptoTests PRIVATE
 add_test(NAME CryptoTests COMMAND CryptoTests)
 
 # --------------------------------------------------------------------------
-# Server sources (shared between TerminalFinanceServer and ServerHealthzTests)
+# Server sources (shared between greylock-server and ServerHealthzTests)
 # --------------------------------------------------------------------------
 set(SERVER_SOURCES
   server/http/Server.cpp
@@ -616,7 +616,7 @@ set(SERVER_SOURCES
 )
 
 # --------------------------------------------------------------------------
-# TerminalFinanceServer
+# greylock-server
 # The HTTPS server binary.  Does NOT link ftxui, libsodium, or libcurl.
 # Dependencies: cpp-httplib (header-only), OpenSSL (for TLS), nlohmann/json.
 #
@@ -624,20 +624,20 @@ set(SERVER_SOURCES
 # It must be defined for every translation unit that includes httplib.h.
 # We set it as a target compile definition so it propagates transitively.
 # --------------------------------------------------------------------------
-add_executable(TerminalFinanceServer server/main.cpp ${SERVER_SOURCES})
-tf_register_first_party(TerminalFinanceServer)
+add_executable(greylock-server server/main.cpp ${SERVER_SOURCES})
+tf_register_first_party(greylock-server)
 
-target_include_directories(TerminalFinanceServer PRIVATE
+target_include_directories(greylock-server PRIVATE
   "${CMAKE_SOURCE_DIR}"
   "${cpp-httplib_SOURCE_DIR}"
   ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_definitions(TerminalFinanceServer PRIVATE
+target_compile_definitions(greylock-server PRIVATE
   CPPHTTPLIB_OPENSSL_SUPPORT
 )
 
-target_link_libraries(TerminalFinanceServer PRIVATE
+target_link_libraries(greylock-server PRIVATE
   OpenSSL::SSL
   OpenSSL::Crypto
   nlohmann_json::nlohmann_json
@@ -837,9 +837,9 @@ set_property(TARGET SQLCipher::sqlcipher APPEND PROPERTY
 
 # --------------------------------------------------------------------------
 # Server DB sources (Database + Migrations).
-# These are added to TerminalFinanceServer via target_sources() so we do NOT
+# These are added to greylock-server via target_sources() so we do NOT
 # need to modify the existing add_executable() line — minimizing 2.C conflict.
-# [2.B EXTENSION: TerminalFinanceServer source list extended here]
+# [2.B EXTENSION: greylock-server source list extended here]
 # [4.E: sqlite3 target → SQLCipher::sqlcipher]
 # --------------------------------------------------------------------------
 set(SERVER_DB_SOURCES
@@ -847,12 +847,12 @@ set(SERVER_DB_SOURCES
   server/db/Migrations.cpp
 )
 
-target_sources(TerminalFinanceServer PRIVATE ${SERVER_DB_SOURCES})
+target_sources(greylock-server PRIVATE ${SERVER_DB_SOURCES})
 
 # No additional include_directories needed — SQLCipher::sqlcipher's
 # INTERFACE_INCLUDE_DIRECTORIES propagates the include path transitively.
 
-target_link_libraries(TerminalFinanceServer PRIVATE SQLCipher::sqlcipher)
+target_link_libraries(greylock-server PRIVATE SQLCipher::sqlcipher)
 
 # --------------------------------------------------------------------------
 # MigrationsTests
@@ -890,12 +890,12 @@ add_test(NAME MigrationsTests COMMAND MigrationsTests)
 # --------------------------------------------------------------------------
 # BackendClientTests  (Phase 2.C)
 # Unit tests use FakeHttpClient (no network).
-# Integration test (Healthz_LiveRoundTrip) launches TerminalFinanceServer as
+# Integration test (Healthz_LiveRoundTrip) launches greylock-server as
 # a subprocess, polls /healthz via BackendClient until ready, then asserts.
 #
 # TF_FIXTURES_DIR is passed so the integration test can find test-ca.pem,
 # test-cert.pem, and test-key.pem without relying on cwd.
-# TF_SERVER_BIN is the absolute path to the TerminalFinanceServer binary so
+# TF_SERVER_BIN is the absolute path to the greylock-server binary so
 # the integration test can fork+exec it without hardcoding build paths.
 # --------------------------------------------------------------------------
 add_executable(BackendClientTests
@@ -905,9 +905,9 @@ add_executable(BackendClientTests
 )
 tf_register_first_party(BackendClientTests)
 
-# The integration test launches the TerminalFinanceServer binary; make sure
+# The integration test launches the greylock-server binary; make sure
 # it's built first.
-add_dependencies(BackendClientTests TerminalFinanceServer)
+add_dependencies(BackendClientTests greylock-server)
 
 if(MSVC)
   target_compile_options(BackendClientTests PRIVATE /MT)
@@ -915,7 +915,7 @@ endif()
 
 target_compile_definitions(BackendClientTests PRIVATE
   TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
-  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+  TF_SERVER_BIN="$<TARGET_FILE:greylock-server>"
 )
 
 target_link_libraries(BackendClientTests PRIVATE
@@ -943,7 +943,7 @@ add_test(NAME BackendClientTests COMMAND BackendClientTests)
 # ==========================================================================
 # Phase 3.B additions — AuthService (TUI side) + AuthServiceTests
 # ==========================================================================
-target_sources(TerminalFinance PRIVATE src/services/AuthService.cpp)
+target_sources(greylock PRIVATE src/services/AuthService.cpp)
 
 add_executable(AuthServiceTests
   tests/test_auth_service.cpp
@@ -999,13 +999,13 @@ set(SERVER_AUDIT_REAL_SOURCES
   server/audit/SqlAuditLog.cpp
 )
 
-target_sources(TerminalFinanceServer PRIVATE
+target_sources(greylock-server PRIVATE
   ${SERVER_AUTH_SOURCES}
   ${SERVER_AUDIT_SOURCES}
   ${SERVER_AUDIT_REAL_SOURCES}
 )
 
-target_link_libraries(TerminalFinanceServer PRIVATE
+target_link_libraries(greylock-server PRIVATE
   ${_SODIUM_TARGET}
 )
 
@@ -1144,7 +1144,7 @@ target_link_libraries(AuthRateLimitTests PRIVATE
 add_test(NAME AuthRateLimitTests COMMAND AuthRateLimitTests)
 
 # --------------------------------------------------------------------------
-# AuthEndpointsTests — integration: launches TerminalFinanceServer.
+# AuthEndpointsTests — integration: launches greylock-server.
 # --------------------------------------------------------------------------
 add_executable(AuthEndpointsTests
   tests/test_auth_endpoints.cpp
@@ -1152,7 +1152,7 @@ add_executable(AuthEndpointsTests
 )
 tf_register_first_party(AuthEndpointsTests)
 
-add_dependencies(AuthEndpointsTests TerminalFinanceServer)
+add_dependencies(AuthEndpointsTests greylock-server)
 
 if(MSVC)
   target_compile_options(AuthEndpointsTests PRIVATE /MT)
@@ -1160,7 +1160,7 @@ endif()
 
 target_compile_definitions(AuthEndpointsTests PRIVATE
   TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
-  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+  TF_SERVER_BIN="$<TARGET_FILE:greylock-server>"
 )
 
 target_include_directories(AuthEndpointsTests PRIVATE
@@ -1356,23 +1356,23 @@ set(SERVER_DATA_SOURCES
   server/data/PlaidLinkHandler.cpp
 )
 
-target_sources(TerminalFinanceServer PRIVATE ${SERVER_DATA_SOURCES})
+target_sources(greylock-server PRIVATE ${SERVER_DATA_SOURCES})
 
 # Phase 5: GET /supplier-map endpoint (session-gated).
 # Lives in its own source group to keep the data/ handler set focused on
 # CRUD endpoints.  Reuses SessionMiddleware (already in SERVER_DATA_SOURCES).
 set(SERVER_DISCOVERY_SOURCES
 )
-target_sources(TerminalFinanceServer PRIVATE ${SERVER_DISCOVERY_SOURCES})
+target_sources(greylock-server PRIVATE ${SERVER_DISCOVERY_SOURCES})
 
 # --------------------------------------------------------------------------
 # TUI-side: RemoteBackendStorageService (IStorageService backed by server API).
 # save() is a documented stub returning false (write-through deferred to Phase 5).
 # --------------------------------------------------------------------------
-target_sources(TerminalFinance PRIVATE src/services/RemoteBackendStorageService.cpp)
+target_sources(greylock PRIVATE src/services/RemoteBackendStorageService.cpp)
 
 # --------------------------------------------------------------------------
-# DataEndpointsTests — integration: launches TerminalFinanceServer on port 19845.
+# DataEndpointsTests — integration: launches greylock-server on port 19845.
 # Exercises entity/account/transaction/category/budget CRUD + auth guardrails.
 # --------------------------------------------------------------------------
 add_executable(DataEndpointsTests
@@ -1381,7 +1381,7 @@ add_executable(DataEndpointsTests
 )
 tf_register_first_party(DataEndpointsTests)
 
-add_dependencies(DataEndpointsTests TerminalFinanceServer)
+add_dependencies(DataEndpointsTests greylock-server)
 
 if(MSVC)
   target_compile_options(DataEndpointsTests PRIVATE /MT)
@@ -1389,7 +1389,7 @@ endif()
 
 target_compile_definitions(DataEndpointsTests PRIVATE
   TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
-  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
+  TF_SERVER_BIN="$<TARGET_FILE:greylock-server>"
 )
 
 target_include_directories(DataEndpointsTests PRIVATE
@@ -1455,11 +1455,11 @@ add_test(NAME RemoteBackendStorageServiceTests COMMAND RemoteBackendStorageServi
 # ==========================================================================
 
 # --------------------------------------------------------------------------
-# Wire PlaidTokenBroker into TerminalFinanceServer.
+# Wire PlaidTokenBroker into greylock-server.
 # PlaidTokenBroker.cpp depends on: Database.h/cpp (SERVER_DB_SOURCES),
 # EnvelopeEncryption.cpp (CRYPTO_SOURCES), Zeroize.h, libsodium, sqlcipher.
 # --------------------------------------------------------------------------
-target_sources(TerminalFinanceServer PRIVATE
+target_sources(greylock-server PRIVATE
   server/plaid/PlaidTokenBroker.cpp
   src/services/crypto/EnvelopeEncryption.cpp
 )
@@ -1542,16 +1542,16 @@ add_test(NAME PlaidServiceRefactorTests COMMAND PlaidServiceRefactorTests)
 # ==========================================================================
 
 # --------------------------------------------------------------------------
-# Wire PlaidApiClient and PlaidSyncScheduler into TerminalFinanceServer.
+# Wire PlaidApiClient and PlaidSyncScheduler into greylock-server.
 # Also adds CurlHttpClient (needed by PlaidApiClient via main.cpp).
 # --------------------------------------------------------------------------
-target_sources(TerminalFinanceServer PRIVATE
+target_sources(greylock-server PRIVATE
   server/plaid/PlaidApiClient.cpp
   server/plaid/PlaidSyncScheduler.cpp
   src/services/http/CurlHttpClient.cpp
 )
 
-target_link_libraries(TerminalFinanceServer PRIVATE
+target_link_libraries(greylock-server PRIVATE
   CURL::libcurl
 )
 
@@ -1663,11 +1663,11 @@ add_test(NAME OpenBrowserTests COMMAND OpenBrowserTests)
 # ==========================================================================
 
 # --------------------------------------------------------------------------
-# Wire V01Migrator into the main TerminalFinance binary.
+# Wire V01Migrator into the main greylock binary.
 # BackendClientAdapter (in V01Migrator.cpp) depends on BackendClient which is
 # already in COMMON_SOURCES.
 # --------------------------------------------------------------------------
-target_sources(TerminalFinance PRIVATE src/migration/V01Migrator.cpp)
+target_sources(greylock PRIVATE src/migration/V01Migrator.cpp)
 
 # --------------------------------------------------------------------------
 # V01MigratorTests

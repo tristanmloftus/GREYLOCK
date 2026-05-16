@@ -108,3 +108,9 @@ void M004_plaid_sync_state_up(Database& db);
 // from the in-browser page.
 // ---------------------------------------------------------------------------
 void M005_plaid_pending_links_up(Database& db);
+
+// ---------------------------------------------------------------------------
+// M006_account_institution — adds institution text column to accounts so the
+// link flow can persist the bank name (greylock-spec.md §8.4 follow-up).
+// ---------------------------------------------------------------------------
+void M006_account_institution_up(Database& db);

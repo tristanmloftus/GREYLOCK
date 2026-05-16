@@ -5,7 +5,7 @@
 // Mirrors lib/auth/enrollment-token.ts from the GREYLOCK TS prototype.
 //
 // Token lifecycle:
-//   1. Admin runs: TerminalFinanceServer --mint-enrollment-token <email>
+//   1. Admin runs: greylock-server --mint-enrollment-token <email>
 //   2. Server calls mint() + persist() → prints raw_token to stdout.
 //   3. Admin emails raw_token to the new user.
 //   4. User POSTs /auth/enroll with {token=raw_token, email, passphrase}.

@@ -23,7 +23,7 @@ public:
     void log(LogLevel level, const std::string& message) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!file_.is_open()) {
-            file_.open("terminalfinance.log", std::ios::app);
+            file_.open("greylock.log", std::ios::app);
         }
 
         std::string level_str;

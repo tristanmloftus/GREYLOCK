@@ -10,7 +10,7 @@
 // themselves after including this header.
 namespace httplib { class SSLServer; }
 
-// Config that controls how TerminalFinanceServer binds and presents itself.
+// Config that controls how greylock-server binds and presents itself.
 struct ServerConfig {
     std::string bind_addr{"127.0.0.1"};  // TF_SERVER_BIND_ADDR
     uint16_t    port{8443};               // TF_SERVER_PORT

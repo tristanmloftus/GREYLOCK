@@ -16,7 +16,7 @@
 // transfer timeout (CURLOPT_TIMEOUT_MS) are set from req.timeout on every
 // call. No request can hang forever.
 //
-// User-Agent: "TerminalFinance/0.2" sent on every request.
+// User-Agent: "Greylock/0.2" sent on every request.
 //
 // Supported methods: GET, POST, PUT, DELETE.
 class CurlHttpClient : public IHttpClient {

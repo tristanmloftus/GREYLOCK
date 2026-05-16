@@ -369,7 +369,7 @@ std::optional<std::string> PlaidApiClient::link_token_create(
     json body_obj = json::object();
     body_obj["client_id"]               = client_id_;
     body_obj["secret"]                  = secret_;
-    body_obj["client_name"]             = "TerminalFinance";
+    body_obj["client_name"]             = "Greylock";
     body_obj["user"]["client_user_id"]  = std::string(client_user_id);
     body_obj["products"]                = json::array({"transactions"});
     body_obj["country_codes"]           = json::array({"US"});

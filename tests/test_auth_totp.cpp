@@ -83,9 +83,9 @@ TEST(Totp, Base32Encoding) {
 TEST(Totp, ProvisioningUriFormat) {
     auto secret = tf::auth::generate_totp_secret();
     std::string uri = tf::auth::make_totp_provisioning_uri(
-        "alice@example.com", "TerminalFinance", secret);
+        "alice@example.com", "Greylock", secret);
     EXPECT_EQ(uri.substr(0, 15), "otpauth://totp/");
-    EXPECT_NE(uri.find("issuer=TerminalFinance"), std::string::npos);
+    EXPECT_NE(uri.find("issuer=Greylock.), std::string::npos);
     EXPECT_NE(uri.find("algorithm=SHA1"), std::string::npos);
     EXPECT_NE(uri.find("digits=6"), std::string::npos);
     EXPECT_NE(uri.find("period=30"), std::string::npos);

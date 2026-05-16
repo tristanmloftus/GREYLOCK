@@ -1,6 +1,6 @@
 #pragma once
 
-// RemoteBackendStorageService.h — IStorageService backed by the TerminalFinance
+// RemoteBackendStorageService.h — IStorageService backed by the Greylock
 // server API (Phase 4.B).
 //
 // load()  — fetches all data from server via BackendClient.

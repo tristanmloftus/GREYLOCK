@@ -1,6 +1,6 @@
 // tests/test_data_endpoints.cpp — Phase 4.B data endpoint integration tests.
 //
-// Launches TerminalFinanceServer as a subprocess (port 19845) and drives the
+// Launches greylock-server as a subprocess (port 19845) and drives the
 // full entity/account/transaction/category/budget CRUD flows.
 //
 // POSIX-only (fork+exec). All tests are skipped on Windows.
@@ -51,7 +51,7 @@ using namespace std::chrono_literals;
 #endif
 
 #ifndef TF_SERVER_BIN
-#  define TF_SERVER_BIN "./TerminalFinanceServer"
+#  define TF_SERVER_BIN "./greylock-server"
 #endif
 
 static const std::string kTestCert  = TF_FIXTURES_DIR "/test-cert.pem";

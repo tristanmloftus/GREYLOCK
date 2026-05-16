@@ -12,7 +12,7 @@
 // curl_global_init / curl_global_cleanup must be called exactly once per
 // process. We use a static local object whose constructor/destructor run at
 // program startup and exit respectively. This is safe in a single-threaded
-// startup scenario (which TerminalFinance is — main() starts before the TUI
+// startup scenario (which Greylock is — main() starts before the TUI
 // event loop, no threading at this stage).
 // --------------------------------------------------------------------------
 namespace {
@@ -142,7 +142,7 @@ std::optional<HttpResponse> CurlHttpClient::send(const HttpRequest& req) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
 
     // -- User-Agent --
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "TerminalFinance/0.2");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Greylock/0.2");
 
     // -- URL --
     curl_easy_setopt(curl, CURLOPT_URL, req.url.c_str());
