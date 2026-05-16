@@ -89,7 +89,7 @@ std::variant<LoginResult, BackendError> AuthService::login(const LoginRequest& r
     const auto& j = std::get<json>(result);
 
     // Extract required fields from the response.
-    if (!j.contains("session_token") || !j.contains("user_id") || !j.contains("expires_at")) {
+    if (!j.contains("session_token") || !j.contains("user_id") || !j.contains("expires_at_unix")) {
         return BackendError{
             BackendError::Kind::BadResponse,
             200,
@@ -101,7 +101,7 @@ std::variant<LoginResult, BackendError> AuthService::login(const LoginRequest& r
     LoginResult lr;
     lr.session_token  = j["session_token"].get<std::string>();
     lr.user_id        = j["user_id"].get<std::string>();
-    lr.expires_at_unix = j["expires_at"].get<int64_t>();
+    lr.expires_at_unix = j["expires_at_unix"].get<int64_t>();
 
     // Cache the session token in the secret store.
     cache_token(lr.session_token);
