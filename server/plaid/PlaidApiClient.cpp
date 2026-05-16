@@ -342,10 +342,14 @@ std::optional<std::string> PlaidApiClient::link_token_create(
 {
     if (!http_client_) return std::nullopt;
 
+    // Per Plaid /link/token/create spec: required fields are client_id,
+    // secret, client_name, language, country_codes, user.client_user_id,
+    // products. The standalone top-level client_user_id (without `user.`)
+    // is NOT a valid field — Plaid returns INVALID_FIELD on it.
     json body_obj = json::object();
     body_obj["client_id"]               = client_id_;
     body_obj["secret"]                  = secret_;
-    body_obj["client_user_id"]          = std::string(client_user_id);
+    body_obj["client_name"]             = "TerminalFinance";
     body_obj["user"]["client_user_id"]  = std::string(client_user_id);
     body_obj["products"]                = json::array({"transactions"});
     body_obj["country_codes"]           = json::array({"US"});
