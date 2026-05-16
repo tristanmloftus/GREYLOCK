@@ -22,6 +22,7 @@
 #include "models/DataStore.h"
 #include "models/Entity.h"
 #include "services/StorageService.h"
+#include "services/RemoteBackendStorageService.h"
 #include "services/PlaidService.h"
 #include "services/ServiceContainer.h"
 #include "services/SecurityService.h"
@@ -149,7 +150,33 @@ public:
         services.set_secret_store(std::make_shared<FileSecretStore>());
 #endif
 
-        data_store.set_storage(storage);
+        // If a cached session token is available for $TF_USER_EMAIL, prefer
+        // the backend as the storage source — that's where the canonical
+        // user data lives. Falls back to the local JSON file when no
+        // session is cached (first-run / pre-login UX).
+        std::shared_ptr<IStorageService> effective_storage = storage;
+        {
+            const char* env_email = std::getenv("TF_USER_EMAIL");
+            std::string email = (env_email && env_email[0] != '\0')
+                ? std::string(env_email) : "";
+            auto secrets = services.get_secret_store();
+            auto backend_ptr = services.get_backend_client();
+            if (!email.empty() && secrets && backend_ptr) {
+                auto raw = secrets->get("tf-session-" + email);
+                if (raw.has_value()) {
+                    std::string token;
+                    token.reserve(raw->size());
+                    for (auto b : *raw) token += static_cast<char>(b);
+                    effective_storage = std::make_shared<RemoteBackendStorageService>(
+                        backend_ptr, std::move(token));
+                    services.set_storage(effective_storage);
+                    Logger::instance().info(
+                        "Storage: using RemoteBackendStorageService (cached session)");
+                }
+            }
+        }
+
+        data_store.set_storage(effective_storage);
 
         dashboard_view = std::make_unique<DashboardView>(data_store);
         accounts_view = std::make_unique<AccountsView>(data_store);
