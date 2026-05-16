@@ -36,61 +36,12 @@
 #include "../models/DataStore.h"
 #include "../models/Transaction.h"
 #include "ViewCommon.h"
-#include "widgets/ui_category_trends.h"
+#include "widgets/ui_cash_flow.h"
 #include "widgets/ui_net_worth.h"
+#include "widgets/ui_recent_activity.h"
 #include "widgets/ui_sync_status.h"
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// month_offset
-// ---------------------------------------------------------------------------
-// Subtract `months` from a "YYYY-MM" string and return the new "YYYY-MM".
-// Used by render() to derive the "previous month" key from the caller-
-// supplied current_month so we can compute MoM deltas without pulling in
-// <chrono>'s year_month_day (which would require C++20 calendar headers
-// that not all of the project's translation units currently include).
-//
-// Tolerates malformed input by returning the input unchanged when shorter
-// than 7 chars — render() will then bucket no transactions into the prev
-// month, which surfaces in the UI as "first month of data" deltas.
-// ---------------------------------------------------------------------------
-std::string month_offset(const std::string& yyyymm, int months) {
-    if (yyyymm.size() < 7) return yyyymm;
-    int year = std::stoi(yyyymm.substr(0, 4));
-    int mon = std::stoi(yyyymm.substr(5, 2));
-    int absolute = year * 12 + (mon - 1) - months;
-    int ny = absolute / 12;
-    int nm = absolute % 12 + 1;
-    char buf[8];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d", ny, nm);
-    return std::string(buf);
-}
-
-// ---------------------------------------------------------------------------
-// sum_expense_by_category_in_month
-// ---------------------------------------------------------------------------
-// Sum the absolute value of negative-amount transactions for a given
-// category_id within a single "YYYY-MM" bucket.  Income (tx.amount >= 0)
-// is excluded — this function intentionally surfaces expense magnitudes
-// only, which is what the Category Trends panel wants to display.
-// Returned value is in the same currency unit as Transaction::amount
-// (dollars in v0.2; cents conversion is a v0.3 follow-up).
-// ---------------------------------------------------------------------------
-double sum_expense_by_category_in_month(
-    const std::vector<Transaction>& txs,
-    const std::string& category_id,
-    const std::string& yyyymm
-) {
-    double total = 0.0;
-    for (const auto& tx : txs) {
-        if (tx.category_id != category_id) continue;
-        if (tx.amount >= 0) continue;
-        if (tx.date.substr(0, 7) != yyyymm) continue;
-        total += std::abs(tx.amount);
-    }
-    return total;
-}
 
 // FTXUI types we use at file scope.
 using ftxui::Element;
@@ -164,53 +115,74 @@ ftxui::Element DashboardView::render(const std::string& current_month,
                                   is_focused(WidgetId::NetWorth));
 
     // ======================================================================
-    // PANEL 2: ui_category_trends
+    // PANEL 2: ui_cash_flow
     // ----------------------------------------------------------------------
-    // Shows: the top spending categories for current_month with MoM deltas.
-    // Data: DataStore::transactions (read directly via the public member,
-    //       not a getter — the v0.1 convention DataStore still exposes).
-    // Transform: for each hard-coded category_id, sum_expense_by_category_
-    //            in_month() at current_month and prev_month, then compute
-    //            percent_change = ((cur - prev) / prev) * 100, with the
-    //            special-case "no prev → 100% growth or 0%" branch below.
-    // Caveats:
-    //   - The category set is hard-coded here (not pulled from the
-    //     categories table) to match v0.1 demo behavior.  When the
-    //     categories endpoint stabilizes, swap this list for a server
-    //     pull.  TODO(v0.3).
-    //   - Categories with zero spend in both months are dropped so the
-    //     panel doesn't show pure-zero rows.
+    // Sum positive-amount tx (income) and |negative-amount tx| (expenses)
+    // for current_month across the visible-entity accounts.  Net is
+    // income - expenses.  Filtered to the same entity scope as Net Worth.
     // ======================================================================
-    const std::vector<std::pair<std::string, std::string>> cat_info = {
-        {"Food & Dining",  "[food]"},
-        {"Transportation", "[trsp]"},
-        {"Shopping",       "[shop]"},
-        {"Entertainment",  "[ent ]"},
-        {"Utilities",      "[util]"},
-    };
-    const std::vector<std::string> cat_ids = {
-        "cat_food", "cat_transport", "cat_shopping", "cat_entertainment", "cat_utilities"
-    };
-
-    const std::string prev_month = month_offset(current_month, 1);
-
-    std::vector<tf::widgets::CategoryTrend> category_trends;
-    for (size_t i = 0; i < cat_info.size(); ++i) {
-        const double cur  = sum_expense_by_category_in_month(data_store_.transactions, cat_ids[i], current_month);
-        const double prev = sum_expense_by_category_in_month(data_store_.transactions, cat_ids[i], prev_month);
-        if (cur <= 0.0 && prev <= 0.0) continue;
-        tf::widgets::CategoryTrend ct;
-        ct.category_name  = cat_info[i].first;
-        ct.emoji          = cat_info[i].second;
-        ct.current_spend  = cur;
-        // Edge case: no prior-month baseline.  Show 100% if there is any
-        // current spend (treated as "new this month") and 0% otherwise.
-        ct.percent_change = (prev > 0.0) ? ((cur - prev) / prev) * 100.0 : (cur > 0.0 ? 100.0 : 0.0);
-        category_trends.push_back(ct);
+    double income_month   = 0.0;
+    double expenses_month = 0.0;
+    {
+        std::set<std::string> visible_account_ids;
+        if (!entity_id_.empty()) {
+            for (auto* acc : data_store_.get_accounts_for_entity(entity_id_)) {
+                visible_account_ids.insert(acc->id);
+            }
+        }
+        for (const auto& tx : data_store_.transactions) {
+            if (tx.date.substr(0, 7) != current_month) continue;
+            if (!entity_id_.empty() &&
+                visible_account_ids.find(tx.account_id) == visible_account_ids.end()) {
+                continue;
+            }
+            if (tx.amount >= 0) income_month   += tx.amount;
+            else                expenses_month += std::abs(tx.amount);
+        }
     }
-    Element category_trends_panel =
-        CategorySpendingTrendsRenderer(category_trends, /*max_items*/5,
-                                       is_focused(WidgetId::CategoryTrends));
+    const double net_month = income_month - expenses_month;
+    Element cash_flow_panel =
+        CashFlowThisMonthRenderer(income_month, expenses_month, net_month,
+                                  is_focused(WidgetId::CashFlow));
+
+    // ======================================================================
+    // PANEL 3: ui_recent_activity
+    // ----------------------------------------------------------------------
+    // Last 5 transactions across the visible entity, most-recent first.
+    // ======================================================================
+    std::vector<tf::widgets::RecentTx> recent_rows;
+    {
+        std::set<std::string> visible_account_ids;
+        if (!entity_id_.empty()) {
+            for (auto* acc : data_store_.get_accounts_for_entity(entity_id_)) {
+                visible_account_ids.insert(acc->id);
+            }
+        }
+        // Copy + sort desc by date (string compare on YYYY-MM-DD is OK).
+        std::vector<Transaction> ordered;
+        ordered.reserve(data_store_.transactions.size());
+        for (const auto& tx : data_store_.transactions) {
+            if (!entity_id_.empty() &&
+                visible_account_ids.find(tx.account_id) == visible_account_ids.end()) {
+                continue;
+            }
+            ordered.push_back(tx);
+        }
+        std::sort(ordered.begin(), ordered.end(),
+                  [](const Transaction& a, const Transaction& b) {
+                      return a.date > b.date;
+                  });
+        const size_t n = std::min<size_t>(ordered.size(), 5);
+        for (size_t i = 0; i < n; ++i) {
+            tf::widgets::RecentTx r;
+            r.date        = ordered[i].date;
+            r.description = ordered[i].description;
+            r.amount      = ordered[i].amount;
+            recent_rows.push_back(std::move(r));
+        }
+    }
+    Element recent_activity_panel =
+        RecentActivityRenderer(recent_rows, is_focused(WidgetId::RecentActivity));
 
     // ======================================================================
     // PANEL 3: ui_sync_status
@@ -266,21 +238,21 @@ ftxui::Element DashboardView::render(const std::string& current_month,
         SyncStatusIndicatorRenderer(sync_statuses, is_focused(WidgetId::SyncStatus));
 
     // ======================================================================
-    // COMPOSE: 2x2 responsive grid (post-shovel-removal layout).
-    //   Top row:    [ NetWorth ][ SyncStatus ]
-    //   Bottom row: [ CategoryTrends spanning ]
-    // Each panel uses `| flex` so the row divides available width evenly;
-    // `vbox(...) | flex` lets the dashboard fill the terminal's vertical
-    // extent. Replacement widgets for the empty cell pending §3.3 of
-    // greylock-kickoff.md.
+    // COMPOSE: 2x2 responsive grid — Rory's four canonical widgets
+    //   Top row:    [ NetWorth     ][ CashFlow   ]
+    //   Bottom row: [ RecentActivity ][ SyncStatus ]
+    // Each panel uses `| flex` so the row divides width evenly;
+    // `vbox(...) | flex` lets the dashboard fill vertical extent.
+    // See greylock-spec.md §8.3 / decisions Q3.
     // ======================================================================
     return vbox({
         hbox({
             net_worth_panel | flex,
-            sync_status_panel | flex,
+            cash_flow_panel | flex,
         }),
         hbox({
-            category_trends_panel | flex,
+            recent_activity_panel | flex,
+            sync_status_panel | flex,
         }),
     }) | flex;
 }

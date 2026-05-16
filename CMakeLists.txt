@@ -423,6 +423,8 @@ set(CRYPTO_SOURCES
 set(WIDGET_SOURCES
   src/views/widgets/ui_net_worth.cpp
   src/views/widgets/ui_category_trends.cpp
+  src/views/widgets/ui_cash_flow.cpp
+  src/views/widgets/ui_recent_activity.cpp
   src/views/widgets/ui_sync_status.cpp
   src/views/widgets/ui_updates.cpp
   src/views/widgets/consolidation_ui.cpp

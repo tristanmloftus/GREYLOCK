@@ -58,8 +58,9 @@ namespace tf::views {
 enum class WidgetId : int {
     None               = 0,
     NetWorth           = 1,
-    SyncStatus         = 2,
-    CategoryTrends     = 3,
+    CashFlow           = 2,
+    RecentActivity     = 3,
+    SyncStatus         = 4,
 };
 
 // ---------------------------------------------------------------------------

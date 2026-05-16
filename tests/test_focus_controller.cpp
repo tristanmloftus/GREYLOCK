@@ -2,7 +2,9 @@
 // machine.  Pure state-machine tests; no FTXUI rendering is involved.
 // See src/views/FocusController.h for the contract being exercised here.
 //
-// 2026-05-16: tests rewritten for the 3-widget post-shovel-scrub grid.
+// 2026-05-16: tests rewritten for the 4-widget post-shovel-scrub grid
+//   row 0:  NetWorth         CashFlow
+//   row 1:  RecentActivity   SyncStatus
 
 #include "../src/views/FocusController.h"
 
@@ -36,69 +38,69 @@ TEST(FocusController, TabFromDashboard_LandsOnFirstWidget) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab cycles in declaration order: NetWorth -> SyncStatus -> CategoryTrends
-// -> NetWorth (wraps).
+// Tab cycles in declaration order through all four widgets, then wraps.
 // ---------------------------------------------------------------------------
 TEST(FocusController, TabCyclesAndWraps) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
     EXPECT_TRUE(fc.handle_key(Event::Tab));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::CashFlow);
     EXPECT_TRUE(fc.handle_key(Event::Tab));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::RecentActivity);
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
+    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
     // Wrap.
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// Shift-Tab from Dashboard lands on CategoryTrends (last in order).
+// Shift-Tab from Dashboard lands on the last widget in order (SyncStatus).
 // ---------------------------------------------------------------------------
 TEST(FocusController, ShiftTabFromDashboard_LandsOnLastWidget) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
 }
 
 // ---------------------------------------------------------------------------
-// h/Right wrap within row 0:  NetWorth -> SyncStatus -> NetWorth.
+// h/Right wrap within row 0:  NetWorth -> CashFlow -> NetWorth.
 // ---------------------------------------------------------------------------
 TEST(FocusController, RightOnRow0_WrapsWithinRow) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
     EXPECT_TRUE(fc.handle_key(Event::Character('l')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::CashFlow);
     EXPECT_TRUE(fc.handle_key(Event::Character('l')));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// j/Down from NetWorth (row 0, col 0) lands on CategoryTrends (row 1, col 0).
+// j/Down from NetWorth (row 0, col 0) lands on RecentActivity (row 1, col 0).
 // ---------------------------------------------------------------------------
-TEST(FocusController, DownFromNetWorth_LandsOnCategoryTrends) {
+TEST(FocusController, DownFromNetWorth_LandsOnRecentActivity) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
     EXPECT_TRUE(fc.handle_key(Event::Character('j')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::RecentActivity);
     EXPECT_TRUE(fc.handle_key(Event::Character('k')));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// j/Down from SyncStatus (row 0, col 1) lands on the empty cell at
-// (row 1, col 1) — falls back to the leftmost populated cell on row 1
-// = CategoryTrends.
+// j/Down from CashFlow (row 0, col 1) lands on SyncStatus (row 1, col 1).
+// All cells populated, no fallback path exercised.
 // ---------------------------------------------------------------------------
-TEST(FocusController, DownFromSyncStatus_FallsBackToLeftmostOnRow1) {
+TEST(FocusController, DownFromCashFlow_LandsOnSyncStatus) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::Tab));            // NetWorth
-    EXPECT_TRUE(fc.handle_key(Event::Tab));            // SyncStatus
-    ASSERT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
+    EXPECT_TRUE(fc.handle_key(Event::Tab));            // CashFlow
+    ASSERT_EQ(fc.focused_widget(), WidgetId::CashFlow);
     EXPECT_TRUE(fc.handle_key(Event::Character('j')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +122,7 @@ TEST(FocusController, Reset_RestoresDashboardNone) {
     FocusController fc;
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_TRUE(fc.handle_key(Event::Tab));
-    ASSERT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
+    ASSERT_EQ(fc.focused_widget(), WidgetId::CashFlow);
     fc.reset();
     EXPECT_EQ(fc.level(), FocusLevel::Dashboard);
     EXPECT_EQ(fc.focused_widget(), WidgetId::None);

@@ -67,6 +67,15 @@ public:
     std::string status_message = "";
     std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget"};
 
+    // Q14 (greylock-spec.md §11): vim-style `g`+letter top-level
+    // navigation.  When the user presses `g`, we enter a one-shot
+    // pending state; the next keypress maps to a top-level view
+    // (g d → Dashboard, g a → Accounts, g t → Transactions,
+    //  g b → Budget) and resets the state.  Any unrecognised
+    // follow-up just clears the pending state and falls through to
+    // the normal handler chain.
+    bool g_pending = false;
+
     // Task v0.3-1: Dashboard focus state machine.  Routes Tab/Shift-Tab/
     // hjkl/arrows/Esc when current_tab == 0 (Dashboard) BEFORE any legacy
     // view-specific handlers.  Reset on view-switch so a return to
@@ -1084,16 +1093,25 @@ int main(int argc, char** argv) {
             return true;
         }
 
-        // View tab switching (non-Dashboard only -- Tab on Dashboard is
-        // claimed above by the focus controller).
-        if (event == Event::Tab) {
-            app.current_tab = (app.current_tab + 1) % app.tabs.size();
-            app.focus_.reset();
-            return true;
+        // Q14: vim-style `g`+letter top-level navigation.
+        //   g d → Dashboard, g a → Accounts, g t → Transactions, g b → Budget.
+        // The first `g` arms a pending state; the next keypress either
+        // matches one of the letters (and switches view) or clears the
+        // state silently.  Tab no longer switches top-level views; the
+        // palette (":" → "dashboard"/"accounts"/"tx"/"budget") remains
+        // as a fallback for users who haven't learned `g`+letter yet.
+        if (app.g_pending) {
+            app.g_pending = false;
+            if      (event == Event::Character('d')) { app.current_tab = 0; app.focus_.reset(); return true; }
+            else if (event == Event::Character('a')) { app.current_tab = 1; app.focus_.reset(); return true; }
+            else if (event == Event::Character('t')) { app.current_tab = 2; app.focus_.reset(); return true; }
+            else if (event == Event::Character('b')) { app.current_tab = 3; app.focus_.reset(); return true; }
+            // Any other key after `g` is just silently ignored — fall
+            // through and let downstream handlers see the original event.
         }
-        if (event == Event::TabReverse) {
-            app.current_tab = (app.current_tab - 1 + (int)app.tabs.size()) % app.tabs.size();
-            app.focus_.reset();
+        if (event == Event::Character('g')) {
+            app.g_pending = true;
+            app.status_message = "g- pending (d/a/t/b)";
             return true;
         }
 

@@ -29,28 +29,29 @@ namespace {
 // Order MUST match the reading-order intent (left-to-right, top-to-
 // bottom).  Indexed by the position of Tab presses from Dashboard.
 // ---------------------------------------------------------------------------
-constexpr std::array<WidgetId, 3> kTabOrder = {
+constexpr std::array<WidgetId, 4> kTabOrder = {
     WidgetId::NetWorth,
+    WidgetId::CashFlow,
+    WidgetId::RecentActivity,
     WidgetId::SyncStatus,
-    WidgetId::CategoryTrends,
 };
 
 // ---------------------------------------------------------------------------
 // Grid coordinates for the 2-row x 2-col Dashboard layout.
 // ---------------------------------------------------------------------------
-// row 0 ->  NetWorth         SyncStatus
-// row 1 ->  CategoryTrends   (empty)
+// row 0 ->  NetWorth         CashFlow
+// row 1 ->  RecentActivity   SyncStatus
 //
-// kGrid[r][c] holds the widget at that cell, or WidgetId::None for the
-// single empty cell.  hjkl movement consults this table; declaration-
-// order (Tab) does not.
+// kGrid[r][c] holds the widget at that cell.  Every cell is populated
+// in this layout — no empty-cell fallback case.  hjkl movement consults
+// this table; declaration-order (Tab) does not.
 // ---------------------------------------------------------------------------
 constexpr int kRows = 2;
 constexpr int kCols = 2;
 
 constexpr std::array<std::array<WidgetId, kCols>, kRows> kGrid = {{
-    {WidgetId::NetWorth,        WidgetId::SyncStatus},
-    {WidgetId::CategoryTrends,  WidgetId::None},
+    {WidgetId::NetWorth,        WidgetId::CashFlow},
+    {WidgetId::RecentActivity,  WidgetId::SyncStatus},
 }};
 
 // Find the (row, col) of a given widget.  Returns false if not on grid
