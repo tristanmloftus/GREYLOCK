@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// CommandRegistry.cpp — the 20-entry command table + fuzzy lookup.
+// CommandRegistry.cpp — the 18-entry command table + fuzzy lookup.
 // ---------------------------------------------------------------------------
 // See CommandRegistry.h for the contract and motivation.  The table
 // itself is the authoritative declaration order; reordering is a
@@ -28,7 +28,7 @@ namespace tf::utils {
 namespace {
 
 // ---------------------------------------------------------------------------
-// The published 20 commands.  Reading order matches the doc table in
+// The published 18 commands.  Reading order matches the doc table in
 // docs/UI_REDESIGN_V0.3.md §3c.  Aliases are the short tokens we expect
 // users to type at the palette ("dashboard", "tx", "nw", etc.).
 // ---------------------------------------------------------------------------
@@ -63,12 +63,8 @@ const std::array<Command, kCommandCount> kCommands = {{
     // Drill-into commands -------------------------------------------------
     { CommandId::DrillInto_NetWorth,
       "Drill into: Net Worth",           "net-worth",     ""    },
-    { CommandId::DrillInto_ShovelScore,
-      "Drill into: Shovel Score",        "shovel-score",  ""    },
     { CommandId::DrillInto_SyncStatus,
       "Drill into: Sync Status",         "sync-status",   ""    },
-    { CommandId::DrillInto_ShovelIntelligence,
-      "Drill into: Shovel Intelligence", "shovel-intel",  ""    },
     { CommandId::DrillInto_CategoryTrends,
       "Drill into: Category Trends",     "trends",        ""    },
 

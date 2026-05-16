@@ -6,12 +6,10 @@
 // fixture tests/snapshot/fixtures/dashboard_net_worth_focused.txt.
 //
 // The DataStore is populated by hand with a single entity, four
-// accounts (one of each type), and zero transactions.  This keeps the
-// fixture independent of supplier_map.json content -- the shovel
-// widgets render their empty-state two-line message; ShovelScore
-// renders the "WAITING TO DIG" tier; CategoryTrends renders the "No
-// transactions this month" placeholder.  Net worth, the only widget
-// driven by accounts (not transactions), gets meaningful data.
+// accounts (one of each type), and zero transactions.  CategoryTrends
+// renders the "No transactions this month" placeholder; SyncStatus
+// renders one row per institution.  Net worth, the only widget driven
+// by accounts (not transactions), gets meaningful data.
 //
 // Run with TF_UPDATE_SNAPSHOTS=1 to capture the fixture after a code
 // change that intentionally alters Dashboard output; the matching
@@ -31,7 +29,7 @@
 
 namespace {
 
-// Dashboard composes five panels in a 2-row hbox.  We size the snapshot
+// Dashboard composes three panels in a 2x2 grid.  We size the snapshot
 // canvas generously (120x40) to give every panel room without
 // clipping; the same dimensions are documented in the redesign proposal
 // drill mockups.
@@ -68,9 +66,9 @@ TEST(DashboardFocusSnapshot, NetWorthFocused) {
     make_account(AccountType::CreditCard, "CreditCard", -500.00);
     make_account(AccountType::Investment, "Investment", 10000.00);
 
-    // No transactions: the shovel widgets render their empty states,
-    // CategoryTrends renders the "No transactions" placeholder, and
-    // SyncStatus renders one row per institution with last_sync = "".
+    // No transactions: CategoryTrends renders the "No transactions"
+    // placeholder, SyncStatus renders one row per institution with
+    // last_sync = "".
 
     // ----- Drive the FocusController to Widget(NetWorth).
     tf::views::FocusController focus;

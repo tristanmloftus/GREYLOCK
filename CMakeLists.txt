@@ -391,7 +391,6 @@ set(COMMON_SOURCES
   src/models/DataStore.cpp
   src/services/PlaidService.cpp
   src/services/StorageService.cpp
-  src/services/DiscoveryService.cpp
   src/services/ConsolidationService.cpp
   src/services/http/CurlHttpClient.cpp
   src/services/crypto/EnvelopeEncryption.cpp
@@ -424,8 +423,6 @@ set(CRYPTO_SOURCES
 set(WIDGET_SOURCES
   src/views/widgets/ui_net_worth.cpp
   src/views/widgets/ui_category_trends.cpp
-  src/views/widgets/ui_shovel_intelligence.cpp
-  src/views/widgets/ui_shovel_score.cpp
   src/views/widgets/ui_sync_status.cpp
   src/views/widgets/ui_updates.cpp
   src/views/widgets/consolidation_ui.cpp
@@ -444,9 +441,8 @@ add_executable(TerminalFinance
   src/main.cpp
   src/views/DashboardView.cpp
   src/views/FocusController.cpp
-  # Task v0.3-2: drill views for net_worth + shovel_score.
+  # Task v0.3-2: drill views for net_worth.
   src/views/drills/Drill_NetWorth.cpp
-  src/views/drills/Drill_ShovelScore.cpp
   # Task v0.3-4: command palette / help overlay / status bar.
   src/views/CommandPalette.cpp
   src/views/HelpOverlay.cpp
@@ -1364,7 +1360,6 @@ target_sources(TerminalFinanceServer PRIVATE ${SERVER_DATA_SOURCES})
 # Lives in its own source group to keep the data/ handler set focused on
 # CRUD endpoints.  Reuses SessionMiddleware (already in SERVER_DATA_SOURCES).
 set(SERVER_DISCOVERY_SOURCES
-  server/discovery/SupplierMapHandler.cpp
 )
 target_sources(TerminalFinanceServer PRIVATE ${SERVER_DISCOVERY_SOURCES})
 
@@ -1712,128 +1707,6 @@ endif()
 
 add_test(NAME V01MigratorTests COMMAND V01MigratorTests)
 
-# ==========================================================================
-# Phase 5 additions — DiscoveryService JSON loader + /supplier-map endpoint
-# ==========================================================================
-
-# --------------------------------------------------------------------------
-# DiscoveryMerchantVelocityTests
-# Unit tests for DiscoveryService against realistic merchant strings
-# (StarbucksUS123, AMZN MKTPLACE * SUBSCRIBE, COSTCO WHSE #0123, USPS PO 12345
-# etc.) plus deterministic MoM velocity assertions.
-# --------------------------------------------------------------------------
-add_executable(DiscoveryMerchantVelocityTests
-  tests/test_discovery_merchant_velocity.cpp
-  src/services/DiscoveryService.cpp
-)
-tf_register_first_party(DiscoveryMerchantVelocityTests)
-
-if(MSVC)
-  target_compile_options(DiscoveryMerchantVelocityTests PRIVATE /MT)
-endif()
-
-target_include_directories(DiscoveryMerchantVelocityTests PRIVATE
-  "${CMAKE_SOURCE_DIR}"
-)
-
-# TF_SUPPLIER_MAP_FIXTURE points to the canonical JSON committed at
-# data/supplier_map.json so the test can load it from any CWD ctest picks.
-target_compile_definitions(DiscoveryMerchantVelocityTests PRIVATE
-  TF_SUPPLIER_MAP_FIXTURE="${CMAKE_SOURCE_DIR}/data/supplier_map.json"
-)
-
-target_link_libraries(DiscoveryMerchantVelocityTests PRIVATE
-  gtest
-  gtest_main
-  nlohmann_json::nlohmann_json
-)
-
-add_test(NAME DiscoveryMerchantVelocityTests COMMAND DiscoveryMerchantVelocityTests)
-
-# --------------------------------------------------------------------------
-# DiscoverySupplierSpendTests (Task v0.3-2)
-# Locks in the contract of DiscoveryService::aggregate_supplier_spend(),
-# the per-supplier aggregator extracted from DashboardView.cpp.  Pure
-# unit tests; no fixture files required (uses the hardcoded fallback
-# supplier rules just like DiscoveryMerchantVelocityTests).  Run with
-# WORKING_DIRECTORY = source dir so DiscoveryService's auto-load of
-# data/supplier_map.json (if present) doesn't surprise the assertions.
-# --------------------------------------------------------------------------
-add_executable(DiscoverySupplierSpendTests
-  tests/test_discovery_supplier_spend.cpp
-  src/services/DiscoveryService.cpp
-)
-tf_register_first_party(DiscoverySupplierSpendTests)
-
-if(MSVC)
-  target_compile_options(DiscoverySupplierSpendTests PRIVATE /MT)
-endif()
-
-target_include_directories(DiscoverySupplierSpendTests PRIVATE
-  "${CMAKE_SOURCE_DIR}"
-)
-
-target_link_libraries(DiscoverySupplierSpendTests PRIVATE
-  gtest
-  gtest_main
-  nlohmann_json::nlohmann_json
-)
-
-add_test(
-  NAME DiscoverySupplierSpendTests
-  COMMAND DiscoverySupplierSpendTests
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-# --------------------------------------------------------------------------
-# SupplierMapEndpointTests
-# Integration test for GET /supplier-map. Boots TerminalFinanceServer on
-# port 19846 (distinct from data-endpoint tests' 19845), enrolls a user,
-# logs in, and exercises the auth/unauth/malformed paths.
-# --------------------------------------------------------------------------
-add_executable(SupplierMapEndpointTests
-  tests/test_supplier_map_endpoint.cpp
-  src/services/http/CurlHttpClient.cpp
-)
-tf_register_first_party(SupplierMapEndpointTests)
-
-add_dependencies(SupplierMapEndpointTests TerminalFinanceServer)
-
-if(MSVC)
-  target_compile_options(SupplierMapEndpointTests PRIVATE /MT)
-endif()
-
-target_compile_definitions(SupplierMapEndpointTests PRIVATE
-  TF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
-  TF_SERVER_BIN="$<TARGET_FILE:TerminalFinanceServer>"
-  TF_SUPPLIER_MAP_FIXTURE="${CMAKE_SOURCE_DIR}/data/supplier_map.json"
-)
-
-target_include_directories(SupplierMapEndpointTests PRIVATE
-  "${CMAKE_SOURCE_DIR}"
-)
-
-target_link_libraries(SupplierMapEndpointTests PRIVATE
-  gtest
-  gtest_main
-  nlohmann_json::nlohmann_json
-  ${_SODIUM_TARGET}
-)
-
-if(WIN32)
-  target_link_libraries(SupplierMapEndpointTests PRIVATE crypt32 advapi32 CURL::libcurl)
-elseif(APPLE)
-  target_link_libraries(SupplierMapEndpointTests PRIVATE
-    "-framework Security"
-    "-framework CoreFoundation"
-    CURL::libcurl
-  )
-else()
-  target_link_libraries(SupplierMapEndpointTests PRIVATE CURL::libcurl)
-endif()
-
-add_test(NAME SupplierMapEndpointTests COMMAND SupplierMapEndpointTests)
-
 # --------------------------------------------------------------------------
 # WidgetSnapshotTests (Phase 5 TUI snapshot harness)
 # Renders each FTXUI widget from src/views/widgets/ at 80x24 and compares
@@ -1925,17 +1798,14 @@ add_test(
 )
 
 # --------------------------------------------------------------------------
-# DrillViewsSnapshotTests (Task v0.3-2)
-# Snapshot tests for the two new full-screen drill views:
-#   Drill_NetWorth     -> tests/snapshot/fixtures/drill_net_worth.txt
-#   Drill_ShovelScore  -> tests/snapshot/fixtures/drill_shovel_score.txt
-# Both render at 120x40.  Mirrors the DashboardFocusSnapshotTests setup
-# because the drill views pull from DataStore + DiscoveryService.
+# DrillViewsSnapshotTests
+# Snapshot tests for the Drill_NetWorth full-screen view at 120x40.
+# Mirrors the DashboardFocusSnapshotTests setup because the drill view
+# pulls from DataStore.
 # --------------------------------------------------------------------------
 add_executable(DrillViewsSnapshotTests
   tests/test_drill_views_snapshot.cpp
   src/views/drills/Drill_NetWorth.cpp
-  src/views/drills/Drill_ShovelScore.cpp
   ${COMMON_SOURCES}
   $<TARGET_OBJECTS:tf_widgets>
 )

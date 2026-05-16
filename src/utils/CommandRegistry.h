@@ -61,17 +61,15 @@ enum class CommandId : int {
     Quit                          = 9,
 
     DrillInto_NetWorth            = 10,
-    DrillInto_ShovelScore         = 11,
-    DrillInto_SyncStatus          = 12,
-    DrillInto_ShovelIntelligence  = 13,
-    DrillInto_CategoryTrends      = 14,
+    DrillInto_SyncStatus          = 11,
+    DrillInto_CategoryTrends      = 12,
 
-    Help                          = 15,
-    Logout                        = 16,
-    Whoami                        = 17,
-    Refresh                       = 18,
+    Help                          = 13,
+    Logout                        = 14,
+    Whoami                        = 15,
+    Refresh                       = 16,
 
-    Search_Transactions           = 19,  // reserved; opens Transactions
+    Search_Transactions           = 17,  // reserved; opens Transactions
                                          // view + focuses search box (the
                                          // search box itself lands in a
                                          // later v0.3 task).
@@ -89,11 +87,11 @@ struct Command {
 };
 
 // ---------------------------------------------------------------------------
-// The full registry, in declaration order.  Size is fixed at 20 — adding
-// a 21st command requires bumping kCommandCount and appending below the
+// The full registry, in declaration order.  Size is fixed at 18 — adding
+// a 19th command requires bumping kCommandCount and appending below the
 // existing entries in CommandRegistry.cpp.
 // ---------------------------------------------------------------------------
-inline constexpr std::size_t kCommandCount = 20;
+inline constexpr std::size_t kCommandCount = 18;
 
 const std::array<Command, kCommandCount>& all_commands();
 

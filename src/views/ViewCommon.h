@@ -21,10 +21,9 @@ const Color LED_BLUE_DIM = Color(20, 85, 135);
 // full token rationale and §3a for the focus model that consumes them.
 //
 // Task v0.3-1 introduced this struct (focus / fg_* / accent_* tokens).
-// Task v0.3-5 (this commit) added `thesis_up` — the magenta accent
-// reserved for "shovel-thesis going up is interesting, not bad" widgets
-// (ui_shovel_intelligence, ui_category_trends) — and migrated every
-// widget off raw `Color::*` literals onto these tokens.
+// Task v0.3-5 added `thesis_up` — the magenta accent reserved for
+// "value going up is *interesting*" widgets (ui_category_trends) —
+// and migrated every widget off raw `Color::*` literals onto these tokens.
 //
 // Semantic discipline: each token has ONE meaning.  `accent_warning`
 // and `focus` happen to share the same FTXUI Color (Yellow) but carry
@@ -41,7 +40,7 @@ struct ColorTokens {
     Color accent_negative;    // Value <  0 / error state / disconnected.
     Color accent_warning;     // Needs attention (stale sync, over-budget).
     Color accent_info;        // Neutral metadata (timestamps, top-tier label).
-    Color thesis_up;          // Shovel-thesis: this number going up is *interesting*.
+    Color thesis_up;          // Thesis accent: this number going up is *interesting*.
 };
 
 // Default theme.  Initialised inline so headers that include ViewCommon.h

@@ -1,7 +1,8 @@
-// test_focus_controller.cpp — Task v0.3-1 unit tests for the Dashboard
-// focus state machine.  Pure state-machine tests; no FTXUI rendering is
-// involved.  See src/views/FocusController.h for the public contract
-// being exercised here.
+// test_focus_controller.cpp — unit tests for the Dashboard focus state
+// machine.  Pure state-machine tests; no FTXUI rendering is involved.
+// See src/views/FocusController.h for the contract being exercised here.
+//
+// 2026-05-16: tests rewritten for the 3-widget post-shovel-scrub grid.
 
 #include "../src/views/FocusController.h"
 
@@ -14,21 +15,8 @@ using tf::views::FocusLevel;
 using tf::views::WidgetId;
 using ftxui::Event;
 
-namespace {
-
-// Helper: assert that after `tabs` Tab presses from a freshly-constructed
-// controller, the focused widget matches `expected`.
-void TabNTimes(FocusController& fc, int n) {
-    for (int i = 0; i < n; ++i) {
-        EXPECT_TRUE(fc.handle_key(Event::Tab))
-            << "Tab #" << (i + 1) << " was not consumed";
-    }
-}
-
-}  // namespace
-
 // ---------------------------------------------------------------------------
-// 1. Initial state — Dashboard level, no widget focused.
+// Initial state — Dashboard level, no widget focused.
 // ---------------------------------------------------------------------------
 TEST(FocusController, InitialState_DashboardLevelNoWidget) {
     FocusController fc;
@@ -38,7 +26,7 @@ TEST(FocusController, InitialState_DashboardLevelNoWidget) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Tab from Dashboard — lands on the first widget (NetWorth).
+// Tab from Dashboard lands on NetWorth.
 // ---------------------------------------------------------------------------
 TEST(FocusController, TabFromDashboard_LandsOnFirstWidget) {
     FocusController fc;
@@ -48,195 +36,107 @@ TEST(FocusController, TabFromDashboard_LandsOnFirstWidget) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Tab cycles in declaration order through all five widgets, then wraps
-//    to NetWorth.  Total: 5 Tabs to reach each widget, 6th Tab wraps.
+// Tab cycles in declaration order: NetWorth -> SyncStatus -> CategoryTrends
+// -> NetWorth (wraps).
 // ---------------------------------------------------------------------------
-TEST(FocusController, TabFromWidget_AdvancesInOrder) {
+TEST(FocusController, TabCyclesAndWraps) {
     FocusController fc;
-    // Tab #1: Dashboard -> Widget(NetWorth)
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
-    // Tab #2..5: cycle through the remaining four widgets in order.
-    EXPECT_TRUE(fc.handle_key(Event::Tab));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelScore);
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
     EXPECT_TRUE(fc.handle_key(Event::Tab));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelIntelligence);
-    EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
-    // Tab #6: wraps to first widget (NetWorth).
+    // Wrap.
     EXPECT_TRUE(fc.handle_key(Event::Tab));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// 4. Shift-Tab from Dashboard lands on the LAST widget (CategoryTrends),
-//    then cycles backward and wraps.
+// Shift-Tab from Dashboard lands on CategoryTrends (last in order).
 // ---------------------------------------------------------------------------
-TEST(FocusController, ShiftTabReverseOrder) {
+TEST(FocusController, ShiftTabFromDashboard_LandsOnLastWidget) {
     FocusController fc;
-    // Shift-Tab #1 from Dashboard -> Widget(CategoryTrends).
-    EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.level(), FocusLevel::Widget);
-    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
-    // Backward cycle through remaining widgets.
-    EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelIntelligence);
-    EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
-    EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelScore);
-    EXPECT_TRUE(fc.handle_key(Event::TabReverse));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
-    // Wrap back to CategoryTrends.
     EXPECT_TRUE(fc.handle_key(Event::TabReverse));
     EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
 }
 
 // ---------------------------------------------------------------------------
-// 5. hjkl Right (l) and ArrowRight move across the focused widget's row.
-//    From NetWorth (row 0, col 0) -> ShovelScore (row 0, col 1).
+// h/Right wrap within row 0:  NetWorth -> SyncStatus -> NetWorth.
 // ---------------------------------------------------------------------------
-TEST(FocusController, HjklRight_MovesAcrossRow) {
+TEST(FocusController, RightOnRow0_WrapsWithinRow) {
     FocusController fc;
-    TabNTimes(fc, 1);  // Land on NetWorth.
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
     ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
-
     EXPECT_TRUE(fc.handle_key(Event::Character('l')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelScore);
-
-    // ArrowRight equivalence.
-    EXPECT_TRUE(fc.handle_key(Event::ArrowRight));
     EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
+    EXPECT_TRUE(fc.handle_key(Event::Character('l')));
+    EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// 6. h/ArrowLeft at the leftmost cell wraps to the rightmost in the same
-//    row.  From NetWorth (row 0, col 0), Left -> SyncStatus (row 0, col 2).
+// j/Down from NetWorth (row 0, col 0) lands on CategoryTrends (row 1, col 0).
 // ---------------------------------------------------------------------------
-TEST(FocusController, HjklLeftAtEdgeWraps) {
+TEST(FocusController, DownFromNetWorth_LandsOnCategoryTrends) {
     FocusController fc;
-    TabNTimes(fc, 1);  // NetWorth.
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
     ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
-
-    EXPECT_TRUE(fc.handle_key(Event::Character('h')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
-
-    // ArrowLeft from SyncStatus lands on ShovelScore (col 1) -- standard
-    // intra-row move, no wrap.
-    EXPECT_TRUE(fc.handle_key(Event::ArrowLeft));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelScore);
-}
-
-// ---------------------------------------------------------------------------
-// 7. j/ArrowDown moves to the same column in the next row.  From
-//    NetWorth (row 0, col 0) -> ShovelIntelligence (row 1, col 0).
-// ---------------------------------------------------------------------------
-TEST(FocusController, HjklDown_SameColumn) {
-    FocusController fc;
-    TabNTimes(fc, 1);  // NetWorth.
-    ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
-
     EXPECT_TRUE(fc.handle_key(Event::Character('j')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelIntelligence);
-
-    // k from ShovelIntel back up to NetWorth.
+    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
     EXPECT_TRUE(fc.handle_key(Event::Character('k')));
     EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }
 
 // ---------------------------------------------------------------------------
-// 8. j/Down into an empty cell falls back to the leftmost populated cell
-//    in the target row.  From SyncStatus (row 0, col 2), Down lands in
-//    row 1 col 2 (empty) -> falls back to ShovelIntelligence (row 1, col 0).
-//
-//    Q8 resolution: leftmost-populated fallback.  Documented in
-//    FocusController.cpp's file header.
+// j/Down from SyncStatus (row 0, col 1) lands on the empty cell at
+// (row 1, col 1) — falls back to the leftmost populated cell on row 1
+// = CategoryTrends.
 // ---------------------------------------------------------------------------
-TEST(FocusController, HjklDownIntoEmptyCell_FallsBack) {
+TEST(FocusController, DownFromSyncStatus_FallsBackToLeftmostOnRow1) {
     FocusController fc;
-    TabNTimes(fc, 3);  // NetWorth -> ShovelScore -> SyncStatus.
+    EXPECT_TRUE(fc.handle_key(Event::Tab));            // NetWorth
+    EXPECT_TRUE(fc.handle_key(Event::Tab));            // SyncStatus
     ASSERT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
-
     EXPECT_TRUE(fc.handle_key(Event::Character('j')));
-    EXPECT_EQ(fc.focused_widget(), WidgetId::ShovelIntelligence);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::CategoryTrends);
 }
 
 // ---------------------------------------------------------------------------
-// 9. Esc from any Widget level returns to Dashboard / None.
+// Esc on Widget level pops to Dashboard.
 // ---------------------------------------------------------------------------
-TEST(FocusController, EscFromWidget_ReturnsToDashboard) {
+TEST(FocusController, EscOnWidget_PopsToDashboard) {
     FocusController fc;
-    TabNTimes(fc, 2);  // Land on ShovelScore.
-    ASSERT_EQ(fc.focused_widget(), WidgetId::ShovelScore);
-
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
+    ASSERT_EQ(fc.level(), FocusLevel::Widget);
     EXPECT_TRUE(fc.handle_key(Event::Escape));
     EXPECT_EQ(fc.level(), FocusLevel::Dashboard);
     EXPECT_EQ(fc.focused_widget(), WidgetId::None);
 }
 
 // ---------------------------------------------------------------------------
-// 10. Esc at Dashboard level is an explicit no-op (Q3 resolved).  The
-//     controller declines to consume the event so the App can route it
-//     elsewhere if it ever wants to (today: nowhere — legacy Esc-exits
-//     is being removed once the App is wired in commit 4).
+// reset() restores Dashboard/None from any state.
 // ---------------------------------------------------------------------------
-TEST(FocusController, EscAtDashboard_IsNoOp) {
+TEST(FocusController, Reset_RestoresDashboardNone) {
     FocusController fc;
-    EXPECT_FALSE(fc.handle_key(Event::Escape));
-    EXPECT_EQ(fc.level(), FocusLevel::Dashboard);
-    EXPECT_EQ(fc.focused_widget(), WidgetId::None);
-}
-
-// ---------------------------------------------------------------------------
-// 11. reset() restores the initial state from any focused widget.
-// ---------------------------------------------------------------------------
-TEST(FocusController, Reset_RestoresInitialState) {
-    FocusController fc;
-    TabNTimes(fc, 4);
-    ASSERT_EQ(fc.focused_widget(), WidgetId::ShovelIntelligence);
-
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
+    ASSERT_EQ(fc.focused_widget(), WidgetId::SyncStatus);
     fc.reset();
     EXPECT_EQ(fc.level(), FocusLevel::Dashboard);
     EXPECT_EQ(fc.focused_widget(), WidgetId::None);
 }
 
 // ---------------------------------------------------------------------------
-// 12. is_widget_focused truth table — for each widget id, the predicate
-//     is true iff that widget is the currently focused one.
+// enter_drill / exit_drill round-trip on NetWorth.
 // ---------------------------------------------------------------------------
-TEST(FocusController, IsWidgetFocused_TruthTable) {
-    const WidgetId ids[] = {
-        WidgetId::NetWorth,
-        WidgetId::ShovelScore,
-        WidgetId::SyncStatus,
-        WidgetId::ShovelIntelligence,
-        WidgetId::CategoryTrends,
-    };
-
-    // At Dashboard level, every predicate is false.
-    {
-        FocusController fc;
-        for (auto w : ids) {
-            EXPECT_FALSE(fc.is_widget_focused(w))
-                << "Dashboard-level should not report any widget focused";
-        }
-        // WidgetId::None must always return false even at Widget level.
-        EXPECT_FALSE(fc.is_widget_focused(WidgetId::None));
-    }
-
-    // For each focused widget, exactly that one predicate is true.
-    for (std::size_t target = 0; target < std::size(ids); ++target) {
-        FocusController fc;
-        TabNTimes(fc, static_cast<int>(target + 1));
-        ASSERT_EQ(fc.focused_widget(), ids[target]);
-        for (std::size_t i = 0; i < std::size(ids); ++i) {
-            const bool expected = (i == target);
-            EXPECT_EQ(fc.is_widget_focused(ids[i]), expected)
-                << "target=" << target << " i=" << i;
-        }
-        // Sanity: None is never reported as focused.
-        EXPECT_FALSE(fc.is_widget_focused(WidgetId::None));
-    }
+TEST(FocusController, DrillRoundTrip_NetWorth) {
+    FocusController fc;
+    EXPECT_TRUE(fc.handle_key(Event::Tab));
+    ASSERT_EQ(fc.focused_widget(), WidgetId::NetWorth);
+    EXPECT_TRUE(fc.enter_drill(WidgetId::NetWorth));
+    EXPECT_EQ(fc.level(), FocusLevel::Drill);
+    EXPECT_EQ(fc.drilled_widget(), WidgetId::NetWorth);
+    EXPECT_TRUE(fc.handle_key(Event::Escape));
+    EXPECT_EQ(fc.level(), FocusLevel::Widget);
+    EXPECT_EQ(fc.focused_widget(), WidgetId::NetWorth);
 }

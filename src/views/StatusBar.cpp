@@ -31,8 +31,8 @@ namespace tf::views {
 // fixtures must not regress.
 // ---------------------------------------------------------------------------
 const char* StatusBar::global_hint_line() {
-    return "  [1-2] Switch entity  [Tab] Switch view  [P] Link Plaid  "
-           "[L] Link test  [C] Config  [Q] Quit";
+    return "  [:] Commands  [?] Help  [1-2] Entity  [Tab] View  [P] Link  "
+           "[Q] Quit";
 }
 
 StatusBar::StatusBar() = default;

@@ -10,7 +10,6 @@
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
 #include "data/PlaidLinkHandler.h"
-#include "discovery/SupplierMapHandler.h"
 #include "plaid/PlaidTokenBroker.h"
 #include "plaid/PlaidApiClient.h"
 #include "plaid/PlaidSyncScheduler.h"
@@ -457,16 +456,6 @@ int main(int argc, char* argv[]) {
     //     3. Delete this TODO + the 404 fallback branch in
     //        BackendClient::get_sync_status() once the endpoint ships.
     //
-    // Phase 5: GET /supplier-map — session-gated canonical supplier rules.
-    // Reads data/supplier_map.json relative to CWD; TF_SUPPLIER_MAP_PATH
-    // overrides for tests + alternate deployments.
-    {
-        std::string supplier_path = env_or("TF_SUPPLIER_MAP_PATH",
-                                           "data/supplier_map.json");
-        tf::discovery::register_supplier_map_handler(
-            server.raw_server(), db, supplier_path);
-    }
-
     // Start Plaid sync scheduler after all routes are registered.
     if (plaid_scheduler_ptr) {
         plaid_scheduler_ptr->start();

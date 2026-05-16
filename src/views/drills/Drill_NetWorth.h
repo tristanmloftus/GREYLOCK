@@ -27,11 +27,9 @@
 //   inside the body.  The bar / table / breakdown blocks are skipped.
 //
 // SCROLLING (v0.3-2 scope)
-//   The drill body fits within 40 rows for the v0.2 sample dataset (~10
+//   The drill body fits within 40 rows for the typical dataset (~10
 //   accounts).  A scroll offset is reserved on the public surface but
-//   not yet driven; v0.3-3 wires j/k once Drill_ShovelIntelligence's
-//   long supplier list forces the same affordance.  set_scroll_offset()
-//   is a no-op visually today.
+//   not yet driven; set_scroll_offset() is a no-op visually today.
 //
 // CALLERS
 //   src/main.cpp — App owns the Drill view; renders it instead of

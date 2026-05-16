@@ -1,37 +1,16 @@
 // ---------------------------------------------------------------------------
-// FocusController.cpp — Dashboard focus state machine (Task v0.3-1).
+// FocusController.cpp — Dashboard focus state machine.
 // ---------------------------------------------------------------------------
-// See FocusController.h for the public contract and the higher-level
-// motivation.  This file implements the state machine, the static 2x3
-// grid table backing hjkl movement, and the wrap policy.
+// See FocusController.h for the public contract.  This file implements
+// the state machine, the static 2x2 grid backing hjkl movement, and the
+// wrap policy.
 //
-// WRAP POLICY (Q8 resolution recorded here)
-//   - Tab / Shift-Tab           : WRAP around declaration order.  After
-//                                  CategoryTrends, Tab returns to NetWorth;
-//                                  after NetWorth, Shift-Tab returns to
-//                                  CategoryTrends.
-//   - h / Left, l / Right       : WRAP within the focused widget's row.
-//                                  From NetWorth (row 0, col 0), `h`
-//                                  lands on SyncStatus (row 0, col 2).
-//                                  From SyncStatus, `l` returns to
-//                                  NetWorth.
-//   - j / Down, k / Up          : WRAP between the two rows (row 0 <-> row 1)
-//                                  on the SAME column.  If the target cell
-//                                  is empty (row 1 col 2), fall back to
-//                                  the leftmost populated cell in that
-//                                  target row (= ShovelIntelligence).
-//
-// Wrap was chosen over "stay put at edge" (the alternative the design
-// proposal §3a contemplated) per the Task v0.3-1 brief: less surprise
-// than dead-ends, mirrors lazygit's `]p` / `[p` cycling behavior, and
-// matches the Tab cycle so all four navigation keys behave consistently.
-//
-// EMPTY-CELL FALLBACK (Q8 confirmation)
-//   The 2x3 grid has exactly one empty cell: (row 1, col 2).  Reaching it
-//   from j/Down on SyncStatus (row 0, col 2) falls back to the leftmost
-//   populated cell on row 1, i.e. ShovelIntelligence.  The reverse
-//   direction (k/Up on ShovelIntelligence or CategoryTrends) lands on a
-//   populated cell with no fallback required.
+// WRAP POLICY
+//   - Tab / Shift-Tab : wrap around declaration order.
+//   - h / Left, l / Right : wrap within the focused widget's row.
+//   - j / Down, k / Up    : wrap between the two rows on the same column.
+//                            Empty cells fall back to the leftmost populated
+//                            cell on the target row.
 //
 // ---------------------------------------------------------------------------
 
@@ -50,30 +29,28 @@ namespace {
 // Order MUST match the reading-order intent (left-to-right, top-to-
 // bottom).  Indexed by the position of Tab presses from Dashboard.
 // ---------------------------------------------------------------------------
-constexpr std::array<WidgetId, 5> kTabOrder = {
+constexpr std::array<WidgetId, 3> kTabOrder = {
     WidgetId::NetWorth,
-    WidgetId::ShovelScore,
     WidgetId::SyncStatus,
-    WidgetId::ShovelIntelligence,
     WidgetId::CategoryTrends,
 };
 
 // ---------------------------------------------------------------------------
-// Grid coordinates for the 2-row x 3-col Dashboard layout.
+// Grid coordinates for the 2-row x 2-col Dashboard layout.
 // ---------------------------------------------------------------------------
-// row 0 ->  NetWorth        ShovelScore       SyncStatus
-// row 1 ->  ShovelIntel     CategoryTrends    (empty)
+// row 0 ->  NetWorth         SyncStatus
+// row 1 ->  CategoryTrends   (empty)
 //
 // kGrid[r][c] holds the widget at that cell, or WidgetId::None for the
 // single empty cell.  hjkl movement consults this table; declaration-
 // order (Tab) does not.
 // ---------------------------------------------------------------------------
 constexpr int kRows = 2;
-constexpr int kCols = 3;
+constexpr int kCols = 2;
 
 constexpr std::array<std::array<WidgetId, kCols>, kRows> kGrid = {{
-    {WidgetId::NetWorth,           WidgetId::ShovelScore,    WidgetId::SyncStatus},
-    {WidgetId::ShovelIntelligence, WidgetId::CategoryTrends, WidgetId::None},
+    {WidgetId::NetWorth,        WidgetId::SyncStatus},
+    {WidgetId::CategoryTrends,  WidgetId::None},
 }};
 
 // Find the (row, col) of a given widget.  Returns false if not on grid

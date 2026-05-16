@@ -1,58 +1,25 @@
 // ---------------------------------------------------------------------------
-// DashboardView.cpp — Phase 5 implementation of the default TUI view.
+// DashboardView.cpp — composes the Dashboard widgets into one FTXUI Element.
 // ---------------------------------------------------------------------------
-// This file wires the five widgets under src/views/widgets/ into a single
-// FTXUI Element returned each frame.  It is pure composition: every data
-// source is owned elsewhere (DataStore for accounts/transactions,
-// DiscoveryService for ticker mapping) and this file only aggregates and
-// formats.
+// Pure composition: data is owned elsewhere (DataStore is the TUI-side
+// in-memory cache, populated by BackendClient from the SQLCipher server DB).
+// This file re-reads DataStore on every render(), computes the per-panel
+// aggregates inline, and hands POD vectors/scalars to each widget renderer.
 //
-// DATA SOURCING STRATEGY
-//   1. Server-side (server/): a SQLCipher-encrypted SQLite database holds
-//      the authoritative accounts, transactions, and categories tables.
-//   2. BackendClient (HTTP): the TUI process pulls those tables on sync
-//      and writes them into DataStore (the TUI-side in-memory cache).
-//   3. DashboardView (this file): re-reads DataStore on every render(),
-//      computes the per-panel aggregates inline, and hands the resulting
-//      POD vectors / scalars to each widget's renderer.
+// CURRENT PANELS (post 2026-05-16 shovel removal — 2x2 grid):
+//   ui_net_worth        <- DataStore::accounts summed by AccountType.
+//                           Restricted to entity_id_ when set.
+//   ui_sync_status      <- per-institution newest transaction date +
+//                           connection inferred from whether the
+//                           institution's accounts have any transactions
+//                           in DataStore. Will switch to a real backend
+//                           sync_status() when that ships.
+//   ui_category_trends  <- DataStore::transactions filtered to two adjacent
+//                           months, aggregated per category_id.
+//                           percent_change = MoM (current vs. previous).
 //
-// PER-PANEL WIRING (summary; per-widget blocks below have the details)
-//   ui_net_worth          <- DataStore::accounts() summed by AccountType
-//                            (Checking / Savings / CreditCard / Investment).
-//                            Restricted to entity_id_ when non-empty.
-//
-//   ui_category_trends    <- DataStore::transactions() filtered to two
-//                            adjacent months, aggregated per category_id.
-//                            percent_change = MoM (current vs. previous).
-//                            Hard-coded display names + ASCII emoji follow
-//                            the v0.1 DashboardView convention.
-//
-//   ui_shovel_intelligence<- DiscoveryService::mapToSupplier() over every
-//                            transaction description.  Per-ticker MoM
-//                            percent_change is computed inline.
-//
-//   ui_shovel_score       <- compute_shovel_score() over the MoM velocity
-//                            of each discovered ticker (see KNOWN STOP-GAP
-//                            below).
-//
-//   ui_sync_status        <- DataStore-derived fallback: per-institution
-//                            newest transaction date + connection inferred
-//                            from whether the institution's accounts have
-//                            any transactions in DataStore.  Will switch
-//                            to BackendClient::sync_status() when that
-//                            method ships.
-//
-// KNOWN STOP-GAP — SHOVEL SCORE
-//   compute_shovel_score() is a placeholder.  It computes the median of
-//   |MoM percent_change| over the top-10 shovel suppliers (by absolute
-//   spend), then clamps to [0, 100].  This is NOT a real model — see
-//   compute_shovel_score() below for what a real replacement should look
-//   like.  Tracked as TODO(shovel-score).
-//
-// SEE ALSO
-//   V0_2_PLAN.md § Phase 5 — Dashboard live wiring.
-//   src/views/widgets/* for the individual panel renderers.
-//   src/services/DiscoveryService.h for the shovel-supplier mapping.
+// Replacement widgets for the (row 1, col 1) empty cell are TBD per
+// greylock-kickoff.md §3.3.
 // ---------------------------------------------------------------------------
 
 #include "DashboardView.h"
@@ -68,12 +35,9 @@
 #include "../models/Account.h"
 #include "../models/DataStore.h"
 #include "../models/Transaction.h"
-#include "../services/DiscoveryService.h"
 #include "ViewCommon.h"
 #include "widgets/ui_category_trends.h"
 #include "widgets/ui_net_worth.h"
-#include "widgets/ui_shovel_intelligence.h"
-#include "widgets/ui_shovel_score.h"
 #include "widgets/ui_sync_status.h"
 
 namespace {
@@ -126,53 +90,6 @@ double sum_expense_by_category_in_month(
         total += std::abs(tx.amount);
     }
     return total;
-}
-
-// ---------------------------------------------------------------------------
-// compute_shovel_score    [v0.2 STOP-GAP — TODO(shovel-score)]
-// ---------------------------------------------------------------------------
-// FORMULA (as implemented):
-//   1. Take the input vector of per-ticker |MoM percent_change| values.
-//   2. Sort ascending.
-//   3. Keep only the top-N (N = min(10, size)) by velocity.
-//   4. Re-sort that subset and return the median, clamped to [0, 100].
-//
-// WHY THIS IS A STOP-GAP:
-//   The current formula has obvious flaws:
-//     - It ignores dollar concentration entirely (a $5 ticker with 100%
-//       MoM growth weighs the same as a $50,000 one).
-//     - "Top-N by velocity" is a poor proxy for "are you actually
-//       building an AI-infrastructure spend pattern?"
-//     - The clamp at 100 is arbitrary — real MoM can exceed 100% easily,
-//       and capping discards signal.
-//   It exists so the Dashboard has a number to display in v0.2 demos.
-//
-// WHAT A REAL SCORER SHOULD CONSIDER:
-//   - Number of distinct shovel tickers detected (breadth).
-//   - Total $ concentration in shovel tickers vs. all expense (depth).
-//   - Per-ticker MoM growth dispersion (consistent climb vs. one-time
-//     spike).
-//   - Recency-weighted contribution so historical noise decays.
-//   - Calibration against a labeled "powerhouse / early-adopter / etc."
-//     bucket — currently the label thresholds in ui_shovel_score.cpp
-//     are unanchored magic numbers.
-//
-// REPLACEMENT TRIGGER:
-//   When the discovery-engineer ships a real scoring API on
-//   DiscoveryService, replace this function with a thin call site.
-//   Tracked: TODO(shovel-score).
-//
-// CALLERS:
-//   DashboardView::render() — only.
-// ---------------------------------------------------------------------------
-double compute_shovel_score(std::vector<double> velocities) {
-    if (velocities.empty()) return 0.0;
-    std::sort(velocities.begin(), velocities.end());
-    const size_t n = std::min<size_t>(velocities.size(), 10);
-    std::vector<double> top(velocities.end() - static_cast<long>(n), velocities.end());
-    std::sort(top.begin(), top.end());
-    const double median = top[top.size() / 2];
-    return std::clamp(median, 0.0, 100.0);
 }
 
 // FTXUI types we use at file scope.
@@ -296,69 +213,7 @@ ftxui::Element DashboardView::render(const std::string& current_month,
                                        is_focused(WidgetId::CategoryTrends));
 
     // ======================================================================
-    // PANELS 3 + 4: ui_shovel_intelligence + ui_shovel_score
-    // ----------------------------------------------------------------------
-    // Shows: discovered AI-infrastructure suppliers ("shovels") with
-    //        per-ticker spend + MoM growth, plus the composite Shovel Score.
-    // Data: DataStore::transactions, mapped to a ticker via
-    //       DiscoveryService::instance().mapToSupplier(tx.description).
-    // Transform: three running totals per ticker (lifetime, current-month,
-    //            previous-month).  percent_change per ticker uses the same
-    //            ((cur - prev) / prev) * 100 formula as category_trends,
-    //            with the same first-month edge-case branch.
-    //            Suppliers are sorted desc by lifetime spend for display.
-    //            shovel_score_value comes from compute_shovel_score(), the
-    //            documented v0.2 stop-gap.
-    // Caveats:
-    //   - DiscoveryService is a singleton today; tests stub it via a
-    //     compile-time hook.  Production swap to DI is a v0.3 follow-up.
-    //   - Only negative-amount transactions count (expenses); refunds and
-    //     deposits to a shovel ticker (rare) are filtered out.
-    //   - The MoM velocity vector passed to compute_shovel_score() uses
-    //     std::abs(pct) — direction is intentionally discarded because
-    //     the current scorer treats "growth" symmetrically with "shrink".
-    //     A real model should NOT do this.  TODO(shovel-score).
-    // ======================================================================
-    // Task v0.3-2: the per-ticker aggregation moved to
-    // DiscoveryService::aggregate_supplier_spend() so the Dashboard widget
-    // and the Drill_ShovelScore view share one truth.  Output is sorted
-    // desc by total_spend with an alphabetical ticker tie-breaker, which
-    // is byte-equivalent to the previous inline (map-ordered) iteration
-    // followed by std::sort.
-    auto& discovery = DiscoveryService::instance();
-    const auto supplier_rows = discovery.aggregate_supplier_spend(
-        data_store_.transactions, current_month, prev_month);
-
-    // Adapt service rows to the widget POD.  The widget only wants
-    // ticker / amount / percent_change; total_spend in the service row
-    // already equals the lifetime "amount" the widget rendered before.
-    std::vector<tf::widgets::SupplierSpend> suppliers;
-    suppliers.reserve(supplier_rows.size());
-    std::vector<double> mom_velocities;
-    mom_velocities.reserve(supplier_rows.size());
-    double total_shovel_spend = 0.0;
-    for (const auto& row : supplier_rows) {
-        tf::widgets::SupplierSpend ss;
-        ss.ticker         = row.ticker;
-        ss.amount         = row.total_spend;
-        ss.percent_change = row.percent_change;
-        suppliers.push_back(std::move(ss));
-        mom_velocities.push_back(std::abs(row.percent_change));
-        total_shovel_spend += row.total_spend;
-    }
-
-    Element shovel_intel_panel =
-        ShovelIntelligenceRenderer(suppliers, is_focused(WidgetId::ShovelIntelligence));
-
-    const double shovel_score_value = compute_shovel_score(mom_velocities);
-    Element shovel_score_panel =
-        ShovelScoreRenderer(shovel_score_value,
-                            static_cast<int>(suppliers.size()),
-                            total_shovel_spend,
-                            is_focused(WidgetId::ShovelScore));
-
-    // ======================================================================
-    // PANEL 5: ui_sync_status
+    // PANEL 3: ui_sync_status
     // ----------------------------------------------------------------------
     // Shows: per-institution connection state and last-sync timestamp.
     // Data: DataStore::accounts + DataStore::transactions.
@@ -411,21 +266,20 @@ ftxui::Element DashboardView::render(const std::string& current_month,
         SyncStatusIndicatorRenderer(sync_statuses, is_focused(WidgetId::SyncStatus));
 
     // ======================================================================
-    // COMPOSE: two-row responsive grid.
-    //   Top row:    [ NetWorth ][ ShovelScore ][ SyncStatus ]
-    //   Bottom row: [ ShovelIntelligence ][ CategoryTrends ]
-    // Each panel uses `| flex` so the row divides available width
-    // evenly; `vbox(...) | flex` lets the whole dashboard fill the
-    // terminal's vertical extent.
+    // COMPOSE: 2x2 responsive grid (post-shovel-removal layout).
+    //   Top row:    [ NetWorth ][ SyncStatus ]
+    //   Bottom row: [ CategoryTrends spanning ]
+    // Each panel uses `| flex` so the row divides available width evenly;
+    // `vbox(...) | flex` lets the dashboard fill the terminal's vertical
+    // extent. Replacement widgets for the empty cell pending §3.3 of
+    // greylock-kickoff.md.
     // ======================================================================
     return vbox({
         hbox({
             net_worth_panel | flex,
-            shovel_score_panel | flex,
             sync_status_panel | flex,
         }),
         hbox({
-            shovel_intel_panel | flex,
             category_trends_panel | flex,
         }),
     }) | flex;

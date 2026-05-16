@@ -24,8 +24,8 @@
 //   - Esc collapses Drill -> Widget -> Dashboard; Esc at Dashboard is a
 //     no-op.
 //   - Drill level: enter_drill(WidgetId) / exit_drill() / drilled_widget()
-//     are exercised by Task v0.3-2 (drill views for net_worth +
-//     shovel_score).  Modal stays inert until v0.3-4.
+//     are exercised by the NetWorth drill view; Modal stays inert
+//     until v0.3-4.
 //   - context_hints() returns empty for now; v0.3-5 populates per-focus
 //     status-bar hints.
 //
@@ -42,27 +42,24 @@
 namespace tf::views {
 
 // ---------------------------------------------------------------------------
-// WidgetId — stable enumeration of the five Dashboard widgets.
+// WidgetId — stable enumeration of the three Dashboard widgets.
 // ---------------------------------------------------------------------------
 // Declaration order is the Tab cycle order.  Numeric values are stable
 // and used as indices into the static grid lookup table inside
 // FocusController.cpp.
 //
-// The grid (3-up + 2-up) is mapped onto a 2-row x 3-col virtual layout:
+// The grid is a 2-row x 2-col virtual layout:
 //
-//   row 0:  NetWorth      ShovelScore       SyncStatus
-//   row 1:  ShovelIntel   CategoryTrends    (empty)
+//   row 0:  NetWorth      SyncStatus
+//   row 1:  CategoryTrends (empty)
 //
 // hjkl uses this geometry; Tab/Shift-Tab uses pure declaration order.
-// See docs/UI_REDESIGN_V0.3.md §3a "Widget IDs and reading order".
 // ---------------------------------------------------------------------------
 enum class WidgetId : int {
     None               = 0,
     NetWorth           = 1,
-    ShovelScore        = 2,
-    SyncStatus         = 3,
-    ShovelIntelligence = 4,
-    CategoryTrends     = 5,
+    SyncStatus         = 2,
+    CategoryTrends     = 3,
 };
 
 // ---------------------------------------------------------------------------
@@ -77,8 +74,8 @@ enum class FocusLevel : int {
     Widget    = 1,  // One widget focused; arrows/hjkl move between widgets.
     Drill     = 2,  // Drill view active (full-screen replacement).  Esc
                     // pops back to Widget level on the same widget.
-                    // Task v0.3-2 wires this for NetWorth + ShovelScore;
-                    // v0.3-3 adds the remaining three.
+                    // Currently wired for NetWorth only; the other
+                    // widgets' drills are pending.
     Modal     = 3,  // Reserved for v0.3-4 (no behavior here).
 };
 

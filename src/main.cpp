@@ -37,7 +37,6 @@
 #include "views/BudgetView.h"
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
-#include "views/drills/Drill_ShovelScore.h"
 #include "views/CommandPalette.h"
 #include "views/HelpOverlay.h"
 #include "views/StatusBar.h"
@@ -188,27 +187,11 @@ public:
             Logger::instance().warning("No existing data file found, creating new");
         }
 
-        if (data_store.entities.empty()) {
-            Entity personal;
-            personal.name = "Personal";
-            personal.type = EntityType::Individual;
-            data_store.add_entity(personal);
-
-            Entity business;
-            business.name = "Business LLC";
-            business.type = EntityType::LLC;
-            data_store.add_entity(business);
-        }
-
-        if (data_store.accounts.empty() && !data_store.entities.empty()) {
-            Account acc;
-            acc.name = "Cash";
-            acc.entity_id = data_store.entities[0].id;
-            acc.type = AccountType::Cash;
-            acc.balance = 100.00;
-            acc.institution = "My Wallet";
-            data_store.add_account(acc);
-        }
+        // No first-run seeding. Entities and accounts are owned by the
+        // backend in a real-storage deployment; in the local-JSON
+        // fallback the user starts with an empty workspace and adds
+        // entities deliberately via the (still-pending) onboarding
+        // flow. See greylock-kickoff.md §3.2.
 
         update_views_for_entity();
         data_store.save();
@@ -336,9 +319,7 @@ public:
             // Drill-into commands: focus the corresponding widget on the
             // Dashboard.  Actual drill-down panels land in v0.3-2/-3.
             case CommandId::DrillInto_NetWorth:
-            case CommandId::DrillInto_ShovelScore:
             case CommandId::DrillInto_SyncStatus:
-            case CommandId::DrillInto_ShovelIntelligence:
             case CommandId::DrillInto_CategoryTrends:
                 current_tab = 0;
                 focus_.reset();
@@ -347,11 +328,9 @@ public:
                 {
                     int steps = 0;
                     switch (id) {
-                        case CommandId::DrillInto_NetWorth:           steps = 1; break;
-                        case CommandId::DrillInto_ShovelScore:        steps = 2; break;
-                        case CommandId::DrillInto_SyncStatus:         steps = 3; break;
-                        case CommandId::DrillInto_ShovelIntelligence: steps = 4; break;
-                        case CommandId::DrillInto_CategoryTrends:     steps = 5; break;
+                        case CommandId::DrillInto_NetWorth:       steps = 1; break;
+                        case CommandId::DrillInto_SyncStatus:     steps = 2; break;
+                        case CommandId::DrillInto_CategoryTrends: steps = 3; break;
                         default: break;
                     }
                     for (int i = 0; i < steps; ++i) {
@@ -409,27 +388,10 @@ public:
                             data_store, entity_id);
                         return d.render();
                     }
-                    case tf::views::WidgetId::ShovelScore: {
-                        // The drill needs current + previous YYYY-MM
-                        // bucket keys; we derive prev_month with the
-                        // same scheme DashboardView::month_offset uses.
-                        std::string prev = month;
-                        if (prev.size() >= 7) {
-                            int year = std::stoi(prev.substr(0, 4));
-                            int mon  = std::stoi(prev.substr(5, 2)) - 1;
-                            if (mon < 1) { mon = 12; year -= 1; }
-                            char buf[8];
-                            std::snprintf(buf, sizeof(buf),
-                                          "%04d-%02d", year, mon);
-                            prev = buf;
-                        }
-                        tf::views::drills::Drill_ShovelScore d(
-                            data_store, month, prev);
-                        return d.render();
-                    }
-                    // v0.3-3 wires SyncStatus / ShovelIntelligence /
-                    // CategoryTrends.  For now an unrecognised drill
-                    // gracefully falls back to the Dashboard render.
+                    // SyncStatus / CategoryTrends drill views are not
+                    // yet wired (Drill_ShovelScore was removed in the
+                    // 2026-05-16 shovel scrub).  Unrecognised drills
+                    // fall back to the Dashboard render gracefully.
                     default:
                         break;
                 }
@@ -1085,14 +1047,13 @@ int main(int argc, char** argv) {
             // App knows which WidgetId is currently focused and whether
             // a drill view exists for it.
             //
-            // Currently only NetWorth and ShovelScore have drill
-            // implementations; Enter on the other three widgets is a
-            // silent no-op until v0.3-3 lands their drills.
+            // Currently only NetWorth has a drill implementation;
+            // Enter on the other widgets is a silent no-op until their
+            // drills land.
             if (event == Event::Return &&
                 app.focus_.level() == tf::views::FocusLevel::Widget) {
                 const tf::views::WidgetId w = app.focus_.focused_widget();
-                if (w == tf::views::WidgetId::NetWorth ||
-                    w == tf::views::WidgetId::ShovelScore) {
+                if (w == tf::views::WidgetId::NetWorth) {
                     app.focus_.enter_drill(w);
                 }
                 return true;

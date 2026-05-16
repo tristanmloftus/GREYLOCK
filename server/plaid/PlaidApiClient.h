@@ -47,17 +47,29 @@ struct PlaidTransaction {
 };
 
 // ---------------------------------------------------------------------------
+// PlaidAccountBalance — one row from the `accounts` array in a Plaid
+// transactions/sync response.  Plaid includes current balances on every
+// sync, so we surface them here instead of issuing a second
+// /accounts/balance/get call.
+// ---------------------------------------------------------------------------
+struct PlaidAccountBalance {
+    std::string plaid_account_id;     // Plaid account_id (server side)
+    int64_t     current_cents{0};     // current balance * 100, signed (credits +)
+};
+
+// ---------------------------------------------------------------------------
 // TransactionList — result from sync_transactions / fetch_transactions.
 //
-// For /transactions/sync: added/modified/removed + next_cursor.
+// For /transactions/sync: added/modified/removed + next_cursor + accounts.
 // For /transactions/get:  all results go into `added`.
 // ---------------------------------------------------------------------------
 struct TransactionList {
-    std::vector<PlaidTransaction> added;
-    std::vector<PlaidTransaction> modified;
-    std::vector<std::string>      removed_ids;  // transaction_id of removed txns
-    std::string                   next_cursor;  // pagination cursor for /sync
-    bool                          has_more{false};
+    std::vector<PlaidTransaction>    added;
+    std::vector<PlaidTransaction>    modified;
+    std::vector<std::string>         removed_ids;  // transaction_id of removed txns
+    std::string                      next_cursor;  // pagination cursor for /sync
+    bool                             has_more{false};
+    std::vector<PlaidAccountBalance> accounts;     // current balances at sync time
 };
 
 // ---------------------------------------------------------------------------

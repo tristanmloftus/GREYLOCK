@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
@@ -237,6 +238,25 @@ std::optional<TransactionList> PlaidApiClient::sync_transactions(
 
     result.next_cursor = resp_json.value("next_cursor", "");
     result.has_more    = resp_json.value("has_more", false);
+
+    // accounts — current balances bundled with every sync response.
+    // Plaid returns dollars as a float; round to integer cents.
+    if (resp_json.contains("accounts") && resp_json["accounts"].is_array()) {
+        for (const auto& acct : resp_json["accounts"]) {
+            PlaidAccountBalance pab;
+            pab.plaid_account_id = acct.value("account_id", "");
+            if (pab.plaid_account_id.empty()) continue;
+            if (acct.contains("balances") && acct["balances"].is_object()) {
+                const auto& bal = acct["balances"];
+                if (bal.contains("current") && bal["current"].is_number()) {
+                    const double dollars = bal["current"].get<double>();
+                    pab.current_cents = static_cast<int64_t>(
+                        std::llround(dollars * 100.0));
+                }
+            }
+            result.accounts.push_back(std::move(pab));
+        }
+    }
 
     return result;
 }

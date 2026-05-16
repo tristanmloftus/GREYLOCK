@@ -15,8 +15,6 @@
 #include "../src/views/widgets/consolidation_ui.h"
 #include "../src/views/widgets/ui_category_trends.h"
 #include "../src/views/widgets/ui_net_worth.h"
-#include "../src/views/widgets/ui_shovel_intelligence.h"
-#include "../src/views/widgets/ui_shovel_score.h"
 #include "../src/views/widgets/ui_sync_status.h"
 #include "../src/views/widgets/ui_updates.h"
 
@@ -57,25 +55,6 @@ TEST(WidgetSnapshot, CategoryTrends) {
     };
     auto element = ftxui::CategorySpendingTrendsRenderer(trends, /*max_items=*/5);
     tf::snapshot::ExpectMatchesFixture(element, W, H, "category_trends");
-}
-
-TEST(WidgetSnapshot, ShovelIntelligence) {
-    std::vector<tf::widgets::SupplierSpend> suppliers = {
-        {/*ticker=*/"NVDA", /*company=*/"NVIDIA Corp",   /*amount=*/2500.00, /*pct=*/120.0},
-        {/*ticker=*/"AMZN", /*company=*/"Amazon",        /*amount=*/1800.00, /*pct=*/15.0},
-        {/*ticker=*/"MSFT", /*company=*/"Microsoft",     /*amount=*/950.00,  /*pct=*/-10.0},
-        {/*ticker=*/"GOOGL",/*company=*/"Alphabet",      /*amount=*/640.00,  /*pct=*/0.0},
-    };
-    auto element = ftxui::ShovelIntelligenceRenderer(suppliers);
-    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_intelligence");
-}
-
-TEST(WidgetSnapshot, ShovelScore) {
-    auto element = ftxui::ShovelScoreRenderer(
-        /*score=*/72.0,
-        /*supplier_count=*/4,
-        /*total_shovel_spend=*/5890.00);
-    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_score");
 }
 
 TEST(WidgetSnapshot, SyncStatus) {
@@ -127,15 +106,6 @@ TEST(WidgetSnapshot, NetWorthFocused) {
     tf::snapshot::ExpectMatchesFixture(element, W, H, "net_worth_focused");
 }
 
-TEST(WidgetSnapshot, ShovelScoreFocused) {
-    auto element = ftxui::ShovelScoreRenderer(
-        /*score=*/72.0,
-        /*supplier_count=*/4,
-        /*total_shovel_spend=*/5890.00,
-        /*focused=*/true);
-    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_score_focused");
-}
-
 TEST(WidgetSnapshot, SyncStatusFocused) {
     std::vector<tf::widgets::SyncStatus> statuses = {
         {/*institution=*/"Chase",            /*connected=*/true,  /*last_sync=*/"2026-04-01", /*err=*/""},
@@ -144,17 +114,6 @@ TEST(WidgetSnapshot, SyncStatusFocused) {
     };
     auto element = ftxui::SyncStatusIndicatorRenderer(statuses, /*focused=*/true);
     tf::snapshot::ExpectMatchesFixture(element, W, H, "sync_status_focused");
-}
-
-TEST(WidgetSnapshot, ShovelIntelligenceFocused) {
-    std::vector<tf::widgets::SupplierSpend> suppliers = {
-        {/*ticker=*/"NVDA", /*company=*/"NVIDIA Corp",   /*amount=*/2500.00, /*pct=*/120.0},
-        {/*ticker=*/"AMZN", /*company=*/"Amazon",        /*amount=*/1800.00, /*pct=*/15.0},
-        {/*ticker=*/"MSFT", /*company=*/"Microsoft",     /*amount=*/950.00,  /*pct=*/-10.0},
-        {/*ticker=*/"GOOGL",/*company=*/"Alphabet",      /*amount=*/640.00,  /*pct=*/0.0},
-    };
-    auto element = ftxui::ShovelIntelligenceRenderer(suppliers, /*focused=*/true);
-    tf::snapshot::ExpectMatchesFixture(element, W, H, "shovel_intelligence_focused");
 }
 
 TEST(WidgetSnapshot, CategoryTrendsFocused) {

@@ -182,10 +182,29 @@ void PlaidSyncScheduler::sync_account(const std::string& account_id) {
                 store_cursor(account_id, result->next_cursor);
             }
 
+            // Persist the current balance from the sync response.
+            // Single-account-per-item model: use the first non-empty
+            // balance Plaid returned.  Multi-account-per-item is a v2
+            // problem (see greylock-kickoff.md §4.4).
+            int64_t balance_cents_updated = 0;
+            if (!result->accounts.empty()) {
+                const int64_t cents = result->accounts.front().current_cents;
+                auto upd = db_.prepare(
+                    "UPDATE accounts SET balance_cents = ? WHERE id = ?;");
+                sqlite3_bind_int64(upd.get(), 1, cents);
+                sqlite3_bind_text(upd.get(), 2,
+                    account_id.c_str(),
+                    static_cast<int>(account_id.size()), SQLITE_STATIC);
+                if (upd.step() == SQLITE_DONE) {
+                    balance_cents_updated = cents;
+                }
+            }
+
             emit_sync_audit(account_id, "plaid_sync_completed", "success",
                 {{"added", added_count},
                  {"modified", modified_count},
-                 {"removed", removed_count}});
+                 {"removed", removed_count},
+                 {"balance_cents", balance_cents_updated}});
         },
         [&]() -> void {
             emit_sync_audit(account_id, "plaid_sync_failed", "failure",

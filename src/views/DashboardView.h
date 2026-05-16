@@ -3,35 +3,23 @@
 // ---------------------------------------------------------------------------
 // DashboardView — the default TUI view.
 // ---------------------------------------------------------------------------
-// Phase 5 rewrite: this view composes five live panels using the FTXUI
-// widgets promoted from proposals/ in commit f573278:
-//   - ui_net_worth          (per-account-type balances)
-//   - ui_category_trends    (top spending categories, MoM change)
-//   - ui_shovel_intelligence (discovered AI-infrastructure suppliers)
-//   - ui_shovel_score       (composite 0-100 AI-spend score; v0.2 stop-gap)
-//   - ui_sync_status        (per-institution last-sync time + connection)
+// Composes three live panels from src/views/widgets/:
+//   - ui_net_worth        (per-account-type balances)
+//   - ui_sync_status      (per-institution last-sync + connection)
+//   - ui_category_trends  (top spending categories, MoM change)
 //
 // DATA FLOW:
 //   server (SQLCipher-encrypted DB)
-//     └─> BackendClient (HTTP, server-side accounts/transactions/categories)
-//           └─> DataStore (in-process cache, owned by the TUI process)
+//     └─> BackendClient (HTTP)
+//           └─> DataStore (in-process cache)
 //                 └─> DashboardView::render()
 //                       └─> widgets in src/views/widgets/*
 //
-//   This view holds NO BackendClient state directly.  It reads only from
-//   DataStore and DiscoveryService.  Sync status falls back to DataStore-
-//   derived counts (newest tx per institution) until BackendClient exposes
-//   a sync_status() method.
+// LAYOUT (2x2 grid):
+//   Top row:    [ NetWorth ][ SyncStatus ]
+//   Bottom row: [ CategoryTrends spanning ]
 //
-// LAYOUT:
-//   Two-row responsive grid composed with FTXUI hbox + flex:
-//     Top row:    [ NetWorth ][ ShovelScore ][ SyncStatus ]
-//     Bottom row: [ ShovelIntelligence ][ CategoryTrends ]
-//
-// SEE ALSO:
-//   V0_2_PLAN.md § Phase 5 — Dashboard live wiring.
-//   src/views/widgets/* for the individual panel renderers.
-//   src/services/DiscoveryService.h for the shovel-supplier mapping.
+// Replacement widget for the empty cell pending greylock-kickoff.md §3.3.
 // ---------------------------------------------------------------------------
 
 #include <ftxui/dom/elements.hpp>
@@ -64,7 +52,7 @@ public:
 
     // Render the composed dashboard for `current_month`.
     //   current_month: "YYYY-MM" (e.g. "2026-05").  Used to bucket per-month
-    //                  category spend and per-ticker shovel velocity.
+    //                  category spend.
     //   focus:         (Task v0.3-1) optional read-only focus state.  When
     //                  a widget is reported as focused via
     //                  FocusController::is_widget_focused(), the matching
