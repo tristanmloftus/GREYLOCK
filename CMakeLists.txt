@@ -1353,6 +1353,7 @@ set(SERVER_DATA_SOURCES
   server/data/TransactionsHandler.cpp
   server/data/CategoriesHandler.cpp
   server/data/BudgetsHandler.cpp
+  server/data/PlaidLinkHandler.cpp
 )
 
 target_sources(TerminalFinanceServer PRIVATE ${SERVER_DATA_SOURCES})
