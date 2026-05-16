@@ -78,6 +78,12 @@ public:
     // concurrent calls (in tests, call from a single test thread).
     void sync_all_accounts();
 
+    // sync_account() — force-sync a single account by ID.
+    // Decrypts the token, calls /transactions/sync, persists results.
+    // Throws on account-not-found or decryption failure.
+    // Thread-safe only if caller ensures no concurrent calls for the same id.
+    void sync_account(const std::string& account_id);
+
 private:
     // Worker thread body.
     void worker_thread();

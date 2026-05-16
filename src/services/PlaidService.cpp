@@ -8,33 +8,71 @@
 // statement, NEVER include token bytes.
 
 #include "PlaidService.h"
+#include "BackendClient.h"
 #include "../utils/Logger.h"
+#include "../utils/OpenBrowser.h"
+
+#include <chrono>
+#include <thread>
 
 // ---------------------------------------------------------------------------
 // ServerPlaidService — forwards Plaid operations to the TerminalFinance server.
-//
-// In v0.2, the server endpoints are:
-//   POST /accounts/{id}/link-plaid         — exchange public_token
-//   GET  /accounts/{id}/transactions       — get cached transactions
-//   GET  /accounts/{id}/plaid-accounts     — get Plaid account info
-//   DELETE /accounts/{id}/plaid-link       — unlink / clear token
-//
-// These endpoints are defined in 4.D (PlaidHandlers); 4.C ships this thin
-// client wrapper that 4.D can flesh out with the actual server endpoints.
 // ---------------------------------------------------------------------------
 class ServerPlaidService : public IPlaidService {
 public:
-    ServerPlaidService() = default;
+    explicit ServerPlaidService(std::shared_ptr<BackendClient> backend)
+        : backend_(std::move(backend)) {}
 
     bool link_account(const std::string& account_id,
-                      const std::string& /*public_token*/) override {
-        // TODO (4.D): POST /accounts/{account_id}/link-plaid via BackendClient.
-        // The server exchanges public_token for access_token and stores it
-        // encrypted via PlaidTokenBroker::store_token().
-        Logger::instance().info(
-            "PlaidService: link_account called for account " + account_id +
-            " (server endpoint wiring deferred to 4.D)");
-        last_error_ = "link_account: server endpoint not yet wired (4.D)";
+                      const std::string& public_token) override {
+        nlohmann::json body = {{"public_token", public_token}};
+        auto result = backend_->post(
+            "/accounts/" + account_id + "/link-plaid", body);
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "link_account: " +
+                std::get<BackendError>(result).message;
+            return false;
+        }
+        return true;
+    }
+
+    bool initiate_link_flow(const std::string& account_id) override {
+        auto result = backend_->post(
+            "/accounts/" + account_id + "/link/init", nlohmann::json::object());
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "initiate_link_flow: " +
+                std::get<BackendError>(result).message;
+            return false;
+        }
+
+        auto& json = std::get<nlohmann::json>(result);
+        auto link_token_it = json.find("link_token");
+        if (link_token_it == json.end() || !link_token_it->is_string()) {
+            last_error_ = "initiate_link_flow: no link_token in response";
+            return false;
+        }
+        std::string link_token = link_token_it->get<std::string>();
+
+        std::string link_url =
+            "https://cdn.plaid.com/link/v2/stable/link-initialize.html"
+            "?token=" + link_token;
+
+        if (!open_browser(link_url)) {
+            last_error_ = "initiate_link_flow: failed to open browser";
+            return false;
+        }
+
+        int max_polls = 150;
+        for (int i = 0; i < max_polls; ++i) {
+            auto sync_result = backend_->post(
+                "/accounts/" + account_id + "/sync", nlohmann::json::object());
+            if (!std::holds_alternative<BackendError>(sync_result)) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+
+        last_error_ = "initiate_link_flow: timeout waiting for link completion";
         return false;
     }
 
@@ -43,33 +81,38 @@ public:
         const std::string& start_date,
         const std::string& end_date
     ) override {
-        // TODO (4.D): GET /accounts/{account_id}/transactions via BackendClient.
-        Logger::instance().info(
-            "PlaidService: get_transactions called for account " + account_id +
-            " [" + start_date + " – " + end_date + "]"
-            " (server endpoint wiring deferred to 4.D)");
-        last_error_ = "get_transactions: server endpoint not yet wired (4.D)";
+        auto result = backend_->get(
+            "/accounts/" + account_id + "/transactions");
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "get_transactions: " +
+                std::get<BackendError>(result).message;
+            return {};
+        }
         return {};
     }
 
     std::vector<PlaidAccount> get_accounts(
         const std::string& account_id
     ) override {
-        // TODO (4.D): GET /accounts/{account_id}/plaid-accounts via BackendClient.
-        Logger::instance().info(
-            "PlaidService: get_accounts called for account " + account_id +
-            " (server endpoint wiring deferred to 4.D)");
-        last_error_ = "get_accounts: server endpoint not yet wired (4.D)";
+        auto result = backend_->get(
+            "/accounts/" + account_id + "/plaid-accounts");
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "get_accounts: " +
+                std::get<BackendError>(result).message;
+            return {};
+        }
         return {};
     }
 
     bool unlink_account(const std::string& account_id) override {
-        // TODO (4.D): DELETE /accounts/{account_id}/plaid-link via BackendClient.
-        Logger::instance().info(
-            "PlaidService: unlink_account called for account " + account_id +
-            " (server endpoint wiring deferred to 4.D)");
-        last_error_ = "unlink_account: server endpoint not yet wired (4.D)";
-        return false;
+        auto result = backend_->post(
+            "/accounts/" + account_id + "/unlink", nlohmann::json::object());
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "unlink_account: " +
+                std::get<BackendError>(result).message;
+            return false;
+        }
+        return true;
     }
 
     std::string get_last_error() const override { return last_error_; }
@@ -79,6 +122,7 @@ public:
 private:
     mutable std::string last_error_;
     std::chrono::seconds timeout_{30};
+    std::shared_ptr<BackendClient> backend_;
 };
 
 // ---------------------------------------------------------------------------
@@ -88,5 +132,14 @@ std::shared_ptr<IPlaidService> create_plaid_service(bool use_stub) {
     if (use_stub) {
         return std::make_shared<StubPlaidService>();
     }
-    return std::make_shared<ServerPlaidService>();
+    return std::make_shared<ServerPlaidService>(nullptr);
+}
+
+std::shared_ptr<IPlaidService> create_plaid_service(
+    std::shared_ptr<BackendClient> backend)
+{
+    if (!backend) {
+        return std::make_shared<StubPlaidService>();
+    }
+    return std::make_shared<ServerPlaidService>(std::move(backend));
 }

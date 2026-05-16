@@ -14,6 +14,7 @@
 #include "../db/Database.h"
 #include "../audit/IAuditLog.h"
 #include "../audit/AuditEvent.h"
+#include "../plaid/PlaidSyncScheduler.h"
 
 #include <nlohmann/json.hpp>
 #include <sodium.h>
@@ -357,7 +358,8 @@ static void handle_delete_account(const httplib::Request& req,
 
 static void handle_sync_account(const httplib::Request& req,
                                  httplib::Response& res,
-                                 Database& db)
+                                 Database& db,
+                                 tf::plaid::PlaidSyncScheduler& scheduler)
 {
     auto user_id = require_session(req, db);
     if (!user_id) { send_json_acc(res, 401, {{"error", "unauthorized"}}); return; }
@@ -390,13 +392,19 @@ static void handle_sync_account(const httplib::Request& req,
         return;
     }
 
-    send_json_acc(res, 501, {{"error", "sync_not_implemented"},
-                              {"message", "Plaid sync not yet implemented"}});
+    try {
+        scheduler.sync_account(account_id);
+        send_json_acc(res, 200, {{"success", true}});
+    } catch (const std::exception& ex) {
+        send_json_acc(res, 500, {{"error", "sync_failed"},
+                                  {"message", ex.what()}});
+    }
 }
 
 void register_accounts_handlers(httplib::SSLServer& server,
                                  Database& db,
-                                 tf::audit::IAuditLog& audit_log)
+                                 tf::audit::IAuditLog& audit_log,
+                                 tf::plaid::PlaidSyncScheduler* plaid_scheduler)
 {
     server.Get("/entities/:entity_id/accounts",
         [&db](const httplib::Request& req, httplib::Response& res) {
@@ -458,17 +466,25 @@ void register_accounts_handlers(httplib::SSLServer& server,
             }
         });
 
-    server.Post("/accounts/:id/sync",
-        [&db](const httplib::Request& req, httplib::Response& res) {
-            try { handle_sync_account(req, res, db); }
-            catch (const std::exception& ex) {
-                res.status = 500;
-                res.set_content(json({{"error","internal"},{"message",ex.what()}}).dump(), "application/json");
-            } catch (...) {
-                res.status = 500;
-                res.set_content(json({{"error","internal"}}).dump(), "application/json");
-            }
-        });
+    if (plaid_scheduler) {
+        server.Post("/accounts/:id/sync",
+            [&db, plaid_scheduler](const httplib::Request& req, httplib::Response& res) {
+                try { handle_sync_account(req, res, db, *plaid_scheduler); }
+                catch (const std::exception& ex) {
+                    res.status = 500;
+                    res.set_content(json({{"error","internal"},{"message",ex.what()}}).dump(), "application/json");
+                } catch (...) {
+                    res.status = 500;
+                    res.set_content(json({{"error","internal"}}).dump(), "application/json");
+                }
+            });
+    } else {
+        server.Post("/accounts/:id/sync",
+            [](const httplib::Request&, httplib::Response& res) {
+                send_json_acc(res, 503, {{"error", "sync_unavailable"},
+                                          {"message", "Plaid sync not available"}});
+            });
+    }
 }
 
 } // namespace tf::data

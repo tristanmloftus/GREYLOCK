@@ -423,7 +423,7 @@ int main(int argc, char* argv[]) {
 
     // Wire data routes (Phase 4.B).
     tf::data::register_entities_handlers(server.raw_server(), db, audit_log);
-    tf::data::register_accounts_handlers(server.raw_server(), db, audit_log);
+    tf::data::register_accounts_handlers(server.raw_server(), db, audit_log, plaid_scheduler_ptr.get());
     tf::data::register_transactions_handlers(server.raw_server(), db, audit_log);
     tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
     tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
