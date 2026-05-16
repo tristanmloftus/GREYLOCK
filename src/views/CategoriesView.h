@@ -25,11 +25,13 @@ public:
     int  get_selected() const    { return selected_; }
 
     Element render() {
+        // Categories are global on the TUI side today (no entity_id on
+        // the Category model). The server-side `categories` table is
+        // entity-scoped; surfacing that distinction requires propagating
+        // entity_id through RemoteBackendStorageService. Deferred until
+        // a per-entity category UX is actually needed.
         std::vector<const Category*> filtered;
         for (const auto& cat : data_store_.categories) {
-            if (!entity_id_.empty() && cat.entity_id != entity_id_ && !cat.entity_id.empty()) {
-                continue;
-            }
             filtered.push_back(&cat);
         }
 
