@@ -9,6 +9,7 @@
 #include "data/TransactionsHandler.h"
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
+#include "data/PlaidLinkHandler.h"
 #include "discovery/SupplierMapHandler.h"
 #include "plaid/PlaidTokenBroker.h"
 #include "plaid/PlaidApiClient.h"
@@ -426,6 +427,11 @@ int main(int argc, char* argv[]) {
     tf::data::register_transactions_handlers(server.raw_server(), db, audit_log);
     tf::data::register_categories_handlers(server.raw_server(), db, audit_log);
     tf::data::register_budgets_handlers(server.raw_server(), db, audit_log);
+
+    if (plaid_api_ptr && plaid_broker_ptr) {
+        tf::data::register_plaid_link_handlers(
+            server.raw_server(), db, *plaid_api_ptr, *plaid_broker_ptr);
+    }
 
     // TODO(v0.4-server): wire GET /sync-status endpoint.
     //

@@ -334,4 +334,182 @@ std::optional<TransactionList> PlaidApiClient::fetch_transactions(
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// link_token_create — POST /link/token/create
+// ---------------------------------------------------------------------------
+std::optional<std::string> PlaidApiClient::link_token_create(
+    std::string_view client_user_id)
+{
+    if (!http_client_) return std::nullopt;
+
+    json body_obj = json::object();
+    body_obj["client_id"]               = client_id_;
+    body_obj["secret"]                  = secret_;
+    body_obj["client_user_id"]          = std::string(client_user_id);
+    body_obj["user"]["client_user_id"]  = std::string(client_user_id);
+    body_obj["products"]                = json::array({"transactions"});
+    body_obj["country_codes"]           = json::array({"US"});
+    body_obj["language"]                = "en";
+
+    std::string body_str = body_obj.dump();
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url    = base_url() + "/link/token/create";
+    req.headers["Content-Type"] = "application/json";
+    req.headers["Plaid-Version"] = "2020-09-14";
+    req.body   = body_str;
+    req.timeout = std::chrono::milliseconds(30'000);
+
+    auto resp_opt = http_client_->send(req);
+
+    std::fill(body_str.begin(), body_str.end(), '\0');
+    if (req.body.has_value()) {
+        std::fill(req.body->begin(), req.body->end(), '\0');
+    }
+
+    if (!resp_opt.has_value()) {
+        std::cerr << "PlaidApiClient::link_token_create: transport error\n";
+        return std::nullopt;
+    }
+
+    if (resp_opt->status_code < 200 || resp_opt->status_code >= 300) {
+        std::cerr << "PlaidApiClient::link_token_create: HTTP "
+                  << resp_opt->status_code << "\n";
+        return std::nullopt;
+    }
+
+    json resp_json;
+    try {
+        resp_json = json::parse(resp_opt->body);
+    } catch (...) {
+        std::cerr << "PlaidApiClient::link_token_create: JSON parse failed\n";
+        return std::nullopt;
+    }
+
+    if (resp_json.contains("error_code") && !resp_json["error_code"].is_null()) {
+        std::cerr << "PlaidApiClient::link_token_create: Plaid error_code="
+                  << resp_json.value("error_code", "unknown") << "\n";
+        return std::nullopt;
+    }
+
+    return resp_json.value("link_token", std::string{});
+}
+
+// ---------------------------------------------------------------------------
+// item_public_token_exchange — POST /item/public_token/exchange
+// ---------------------------------------------------------------------------
+std::optional<std::string> PlaidApiClient::item_public_token_exchange(
+    std::string_view public_token)
+{
+    if (!http_client_) return std::nullopt;
+
+    json body_obj = json::object();
+    body_obj["client_id"]    = client_id_;
+    body_obj["secret"]       = secret_;
+    body_obj["public_token"] = std::string(public_token);
+
+    std::string body_str = body_obj.dump();
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url    = base_url() + "/item/public_token/exchange";
+    req.headers["Content-Type"] = "application/json";
+    req.headers["Plaid-Version"] = "2020-09-14";
+    req.body   = body_str;
+    req.timeout = std::chrono::milliseconds(30'000);
+
+    auto resp_opt = http_client_->send(req);
+
+    std::fill(body_str.begin(), body_str.end(), '\0');
+    if (req.body.has_value()) {
+        std::fill(req.body->begin(), req.body->end(), '\0');
+    }
+
+    if (!resp_opt.has_value()) {
+        std::cerr << "PlaidApiClient::item_public_token_exchange: transport error\n";
+        return std::nullopt;
+    }
+
+    if (resp_opt->status_code < 200 || resp_opt->status_code >= 300) {
+        std::cerr << "PlaidApiClient::item_public_token_exchange: HTTP "
+                  << resp_opt->status_code << "\n";
+        return std::nullopt;
+    }
+
+    json resp_json;
+    try {
+        resp_json = json::parse(resp_opt->body);
+    } catch (...) {
+        std::cerr << "PlaidApiClient::item_public_token_exchange: JSON parse failed\n";
+        return std::nullopt;
+    }
+
+    if (resp_json.contains("error_code") && !resp_json["error_code"].is_null()) {
+        std::cerr << "PlaidApiClient::item_public_token_exchange: Plaid error_code="
+                  << resp_json.value("error_code", "unknown") << "\n";
+        return std::nullopt;
+    }
+
+    return resp_json.value("access_token", std::string{});
+}
+
+// ---------------------------------------------------------------------------
+// item_remove — POST /item/remove
+// ---------------------------------------------------------------------------
+bool PlaidApiClient::item_remove(
+    std::string_view access_token)
+{
+    if (!http_client_) return false;
+
+    json body_obj = json::object();
+    body_obj["client_id"]    = client_id_;
+    body_obj["secret"]       = secret_;
+    body_obj["access_token"] = std::string(access_token);
+
+    std::string body_str = body_obj.dump();
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url    = base_url() + "/item/remove";
+    req.headers["Content-Type"] = "application/json";
+    req.headers["Plaid-Version"] = "2020-09-14";
+    req.body   = body_str;
+    req.timeout = std::chrono::milliseconds(30'000);
+
+    auto resp_opt = http_client_->send(req);
+
+    std::fill(body_str.begin(), body_str.end(), '\0');
+    if (req.body.has_value()) {
+        std::fill(req.body->begin(), req.body->end(), '\0');
+    }
+
+    if (!resp_opt.has_value()) {
+        std::cerr << "PlaidApiClient::item_remove: transport error\n";
+        return false;
+    }
+
+    if (resp_opt->status_code < 200 || resp_opt->status_code >= 300) {
+        std::cerr << "PlaidApiClient::item_remove: HTTP "
+                  << resp_opt->status_code << "\n";
+        return false;
+    }
+
+    json resp_json;
+    try {
+        resp_json = json::parse(resp_opt->body);
+    } catch (...) {
+        std::cerr << "PlaidApiClient::item_remove: JSON parse failed\n";
+        return false;
+    }
+
+    if (resp_json.contains("error_code") && !resp_json["error_code"].is_null()) {
+        std::cerr << "PlaidApiClient::item_remove: Plaid error_code="
+                  << resp_json.value("error_code", "unknown") << "\n";
+        return false;
+    }
+
+    return resp_json.value("removed", false);
+}
+
 } // namespace tf::plaid
