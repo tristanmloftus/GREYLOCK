@@ -32,8 +32,15 @@ namespace tf::auth {
 
 // Absolute and idle timeout constants (seconds).
 // Exposed as constants so tests can reference them directly.
-static constexpr int64_t kSessionIdleTimeoutSeconds     = 30 * 60;   // 30 min
+//
+// Idle timeout used to be 30 min — that's appropriate for shared-tenant
+// environments but punitive for Greylock (single principal per session,
+// tailnet-only, TUI opened a few times a day with hours between calls).
+// Setting it equal to the absolute timeout effectively disables the
+// idle check; the absolute 8-hour cap still applies and is the real
+// authorization window.
 static constexpr int64_t kSessionAbsoluteTimeoutSeconds = 8 * 3600;  // 8 h
+static constexpr int64_t kSessionIdleTimeoutSeconds     = kSessionAbsoluteTimeoutSeconds;
 
 // ---------------------------------------------------------------------------
 // MintedSession
