@@ -37,6 +37,7 @@
 #include "views/BudgetView.h"
 #include "views/CategoriesView.h"
 #include "views/DecisionDetailView.h"
+#include "views/GraphView.h"
 #include "views/HomeView.h"
 #include "views/PlaceholderView.h"
 #include "views/RelationshipDetailView.h"
@@ -83,10 +84,88 @@ public:
 
     // Object detail views (reference Panels 4 + 5). Reached via
     // `:open <type> <id>` which sets the underlying POD then routes
-    // current_tab to 14 / 15.  Each view stays in "no data" mode
-    // until populated.
+    // current_tab to 6 (decision) or 11 (relationship).  Each view
+    // stays in "no data" mode until populated.
     std::unique_ptr<tf::views::DecisionDetailView>     decision_detail_view;
     std::unique_ptr<tf::views::RelationshipDetailView> relationship_detail_view;
+    std::unique_ptr<GraphView>                          graph_view;
+
+    // Most-recent argument captured by the `:open` parser (e.g. "cade",
+    // "services-arm"). Used to label the command-header chrome strip.
+    std::string last_open_arg_;
+    // Most-recent `:graph` command text (e.g. "graph --depth 2") so the
+    // command-header chrome reflects what produced the view.
+    std::string last_graph_cmd_;
+
+    // Parse the argument string of an `:open <args>` palette command.
+    // Today we don't yet have server endpoints for the v3/v4 typed
+    // objects, so we populate the detail-view PODs with the argument
+    // text and a "no record yet" status.  When endpoints land, the
+    // body of this method swaps to a real lookup; the view contract
+    // stays the same.
+    void handle_open_command(std::string args) {
+        last_open_arg_ = args;
+        auto sp = args.find(' ');
+        std::string type;
+        std::string id;
+        if (sp == std::string::npos) {
+            type = "auto";   // disambiguate by id alone
+            id   = args;
+        } else {
+            type = args.substr(0, sp);
+            id   = args.substr(sp + 1);
+        }
+
+        if (type == "decision") {
+            tf::views::Decision d;
+            d.id              = id;
+            d.title           = id;
+            d.body_rationale  = "";
+            d.deciders        = "";
+            d.status          = "no record yet";
+            d.entity_scope    = "—";
+            d.confidence_str  = "—";
+            d.touches         = {};
+            d.source_vault_path  = "vault/decisions/" + id + ".md (not ingested)";
+            d.source_commit_sha  = "—";
+            d.outcome_status     = "—";
+            d.outcome_prompt     = "";
+            d.decided_at_date    = "—";
+            decision_detail_view->set_decision(std::move(d));
+            current_tab = 6;
+            focus_.reset();
+            return;
+        }
+        if (type == "target") {
+            // Targets get rendered as relationships-with-stage for now;
+            // proper TargetDetailView lands when targets data flow does.
+            tf::views::Relationship r;
+            r.display_name      = id;
+            r.role_summary      = "target · stage: lead (no record yet)";
+            r.relationship_kind = "—";
+            r.cadence_summary   = "—";
+            r.cadence_ok        = false;
+            r.working_on        = "—";
+            r.last_real_conversation = "—";
+            r.last_text_exchange     = "—";
+            relationship_detail_view->set_relationship(std::move(r));
+            current_tab = 11;
+            return;
+        }
+        // person / account / auto / anything-else: open as relationship
+        tf::views::Relationship r;
+        r.display_name      = id;
+        r.role_summary      = "(no record yet)";
+        r.relationship_kind = "—";
+        r.cadence_summary   = "—";
+        r.cadence_ok        = false;
+        r.working_on        = "—";
+        r.last_real_conversation = "—";
+        r.last_text_exchange     = "—";
+        relationship_detail_view->set_relationship(std::move(r));
+        current_tab = 11;
+        focus_.reset();
+    }
 
     int current_entity = 0;
     int current_tab = 0;
@@ -270,6 +349,17 @@ public:
             "v3: decisions table live (M008). Per-row detail view ready (see g D again after `:open`).");
         decision_detail_view = std::make_unique<tf::views::DecisionDetailView>();
         relationship_detail_view = std::make_unique<tf::views::RelationshipDetailView>();
+        graph_view = std::make_unique<GraphView>(data_store);
+        // Use the same handle as HomeView for "you · <name>".
+        {
+            std::string handle_for_graph = "rory";
+            if (const char* em = std::getenv("TF_USER_EMAIL"); em && em[0]) {
+                std::string e = em;
+                auto at = e.find('@');
+                handle_for_graph = (at == std::string::npos) ? e : e.substr(0, at);
+            }
+            graph_view->set_principal_name(handle_for_graph + " loftus");
+        }
         tasks_view = std::make_unique<PlaceholderView>(
             "Tasks",
             "Open / in-progress / done. `c` to complete; due-date sort.",
@@ -561,6 +651,7 @@ public:
                                   : relationships_view->render();
                 case 12: return real_estate_view->render();
                 case 13: return dashboard_view->render(month, &focus_);     // widget grid (Snapshot)
+                case 14: return graph_view->render();                      // :graph
                 default: return text("Unknown") | color(LED_BLUE);
             }
         };
@@ -584,7 +675,7 @@ public:
         static const std::vector<std::string> kHiddenViewNames = {
             "Notes", "Decisions", "Tasks", "Events",
             "Proposals", "Targets", "Relationships", "Real Estate",
-            "Snapshot"
+            "Snapshot", "Graph"
         };
         Elements view_tabs;
         for (size_t i = 0; i < tabs.size(); ++i) {
@@ -632,11 +723,56 @@ public:
         // The "hints_line" placeholder kept by v0.3-1 is the StatusBar's
         // top row now.
         // ----------------------------------------------------------------
+        // ----------------------------------------------------------------
+        // Command-header chrome (reference Panels 2–5).  Each non-Home
+        // view shows the `rory@greylock:~ $ <command>` line that
+        // notionally produced it.  Home (tab 0) has its own session
+        // chrome inside HomeView::render(), so we skip the header there.
+        // ----------------------------------------------------------------
+        std::string handle = "rory";
+        if (const char* em = std::getenv("TF_USER_EMAIL"); em && em[0]) {
+            std::string e = em;
+            auto at = e.find('@');
+            handle = (at == std::string::npos) ? e : e.substr(0, at);
+        }
+        std::string cmd_for_tab;
+        switch (current_tab) {
+            case 1:  cmd_for_tab = "accounts";       break;
+            case 2:  cmd_for_tab = "tx";             break;
+            case 3:  cmd_for_tab = "budget";         break;
+            case 4:  cmd_for_tab = "categories";     break;
+            case 5:  cmd_for_tab = "notes";          break;
+            case 6:  cmd_for_tab =
+                decision_detail_view->has_data()
+                    ? "open decision " + last_open_arg_
+                    : "decisions";               break;
+            case 7:  cmd_for_tab = "tasks";          break;
+            case 8:  cmd_for_tab = "events";         break;
+            case 9:  cmd_for_tab = "proposals";      break;
+            case 10: cmd_for_tab = "targets";        break;
+            case 11: cmd_for_tab =
+                relationship_detail_view->has_data()
+                    ? "open " + last_open_arg_
+                    : "relationships";           break;
+            case 12: cmd_for_tab = "real-estate";    break;
+            case 13: cmd_for_tab = "snapshot";       break;
+            case 14: cmd_for_tab = last_graph_cmd_.empty() ? "graph" : last_graph_cmd_; break;
+            default: break;
+        }
+
+        Element command_header_strip = (current_tab == 0)
+            ? text("")  // Home owns its own chrome.
+            : hbox({
+                text("  " + handle + "@greylock:~ $ ") | color(kTokens.fg_dim),
+                text(cmd_for_tab) | color(kTokens.fg_emphasized),
+              });
+
         Element background = vbox({
             text("") | bgcolor(Color::Black),
             hbox(entity_tabs) | color(LED_BLUE) | bgcolor(Color::Black),
             hbox(view_tabs) | color(LED_BLUE) | bgcolor(Color::Black),
             separator() | color(LED_BLUE_DIM),
+            command_header_strip,
             tab_content() | flex | bgcolor(Color::Black),
             separator() | color(LED_BLUE_DIM),
             status_bar_element,
@@ -1180,6 +1316,64 @@ int main(int argc, char** argv) {
         // dispatch's path; here we mirror it for the Esc-cancel path.
         // -----------------------------------------------------------------
         if (app.palette_.is_open()) {
+            // Verb-parser intercept (reference Panels 2–5).  Before the
+            // palette consumes Enter for its normal fuzzy-dispatch path,
+            // peek at the typed query.  If it starts with a known verb
+            // (open / graph / ask / reimb), route to the verb handler
+            // and consume the Enter; otherwise fall through to fuzzy.
+            if (event == Event::Return) {
+                const std::string& raw = app.palette_.query();
+                std::size_t start = raw.find_first_not_of(" \t");
+                std::string trimmed = (start == std::string::npos) ? std::string() : raw.substr(start);
+                std::size_t sp = trimmed.find(' ');
+                std::string verb = (sp == std::string::npos) ? trimmed : trimmed.substr(0, sp);
+                std::string args = (sp == std::string::npos) ? std::string() : trimmed.substr(sp + 1);
+                // strip leading colon if user typed ":open ..."
+                if (!verb.empty() && verb[0] == ':') verb = verb.substr(1);
+
+                auto close_palette = [&]() {
+                    app.palette_.close();
+                    app.focus_.exit_modal();
+                };
+
+                if (verb == "open" && !args.empty()) {
+                    app.handle_open_command(args);
+                    close_palette();
+                    return true;
+                }
+                if (verb == "graph") {
+                    int depth = 2;
+                    // tolerate "graph 3" and "graph --depth 3"
+                    {
+                        std::string rest = args;
+                        if (rest.rfind("--depth", 0) == 0) {
+                            auto eq = rest.find(' ');
+                            if (eq != std::string::npos) rest = rest.substr(eq + 1);
+                            else rest.clear();
+                        }
+                        if (!rest.empty()) { try { depth = std::stoi(rest); } catch (...) {} }
+                    }
+                    app.graph_view->set_depth(depth);
+                    app.last_graph_cmd_ = "graph --depth " + std::to_string(depth);
+                    app.current_tab = 14;
+                    app.focus_.reset();
+                    close_palette();
+                    return true;
+                }
+                if (verb == "ask") {
+                    app.status_message =
+                        "ask: blocked on Q8 (embedding model) + Q10 (privacy tiers). "
+                        "Pick those in greylock-questions.md and the loop unlocks.";
+                    close_palette();
+                    return true;
+                }
+                if (verb == "reimb") {
+                    app.status_message =
+                        "reimb: reimbursements UI not built yet (M007 schema is live).";
+                    close_palette();
+                    return true;
+                }
+            }
             const bool was_open = true;
             const bool consumed = app.palette_.handle_key(event);
             if (was_open && !app.palette_.is_open()) {
@@ -1295,6 +1489,13 @@ int main(int argc, char** argv) {
             else if (event == Event::Character('r')) { app.current_tab = 12; app.focus_.reset(); return true; }
             // v1 widget-grid snapshot (kept reachable; default landing is the home digest)
             else if (event == Event::Character('s')) { app.current_tab = 13; app.focus_.reset(); return true; }
+            // Graph (typed knowledge tree, reference Panel 2)
+            else if (event == Event::Character('G')) {
+                app.last_graph_cmd_ = "graph --depth " + std::to_string(app.graph_view->depth());
+                app.current_tab = 14;
+                app.focus_.reset();
+                return true;
+            }
             // Any other key after `g` is just silently ignored — fall
             // through and let downstream handlers see the original event.
         }
