@@ -102,6 +102,47 @@ public:
     // command-header chrome reflects what produced the view.
     std::string last_graph_cmd_;
 
+    // Fetch /decisions, /relationships, /targets counts + names from
+    // the backend and feed them into graph_view so the tree renders
+    // real counts.  Safe to call every `:graph`; cheap (3 GETs).
+    void refresh_graph_counts() {
+        if (!graph_view) return;
+        auto backend = services.get_backend_client();
+        auto secrets = services.get_secret_store();
+        if (!backend || !secrets) return;
+        const char* em = std::getenv("TF_USER_EMAIL");
+        std::string email = (em && em[0]) ? std::string(em) : std::string();
+        auto raw = secrets->get("tf-session-" + email);
+        if (!raw.has_value()) return;
+        std::string token;
+        for (auto b : *raw) token += static_cast<char>(b);
+
+        auto fetch_list = [&](const std::string& path,
+                              const std::string& name_key) -> std::pair<int, std::vector<std::string>> {
+            auto r = backend->get(path, token);
+            if (std::holds_alternative<BackendError>(r)) return {0, {}};
+            const auto& j = std::get<nlohmann::json>(r);
+            if (!j.contains("items") || !j["items"].is_array()) return {0, {}};
+            std::vector<std::string> names;
+            for (const auto& item : j["items"]) {
+                if (item.contains(name_key) && item[name_key].is_string()) {
+                    names.push_back(item[name_key].get<std::string>());
+                }
+            }
+            return {static_cast<int>(j["items"].size()), std::move(names)};
+        };
+        auto [d_count, d_titles] = fetch_list("/decisions",     "title");
+        auto [r_count, r_names]  = fetch_list("/relationships", "display_name");
+        auto [t_count, t_names]  = fetch_list("/targets",       "name");
+
+        graph_view->set_decision_count(d_count);
+        graph_view->set_decision_titles(std::move(d_titles));
+        graph_view->set_relationship_count(r_count);
+        graph_view->set_relationship_names(std::move(r_names));
+        graph_view->set_target_count(t_count);
+        graph_view->set_target_names(std::move(t_names));
+    }
+
     // Parse the argument string of an `:open <args>` palette command
     // and populate the matching detail view from the backend.
     // Supported forms:
@@ -1430,7 +1471,6 @@ int main(int argc, char** argv) {
                 }
                 if (verb == "graph") {
                     int depth = 2;
-                    // tolerate "graph 3" and "graph --depth 3"
                     {
                         std::string rest = args;
                         if (rest.rfind("--depth", 0) == 0) {
@@ -1442,6 +1482,11 @@ int main(int argc, char** argv) {
                     }
                     app.graph_view->set_depth(depth);
                     app.last_graph_cmd_ = "graph --depth " + std::to_string(depth);
+
+                    // Refresh counts from the v3/v4 endpoints so the
+                    // tree reflects the current DB state.
+                    app.refresh_graph_counts();
+
                     app.current_tab = 14;
                     app.focus_.reset();
                     close_palette();

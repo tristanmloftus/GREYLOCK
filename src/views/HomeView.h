@@ -42,7 +42,7 @@ public:
     void set_entity_id(const std::string& id) { entity_id_ = id; }
     void set_user_email(const std::string& e) { user_email_ = e; }
     void set_user_handle(const std::string& h) { user_handle_ = h; }
-    void set_scope_tags(const std::string& s)  { scope_tags_ = s;  }
+    void set_scope_tags(const std::string& s)  { scope_tags_override_ = s;  }
 
     Element render() const {
         using namespace ftxui;
@@ -59,9 +59,28 @@ public:
         std::strftime(clock_buf, sizeof(clock_buf), "%H:%M:%S", &lt);
 
         // Reference: "greylock · rory@greylock · #pcc + #me-rory  09:42:17"
+        // Compute scope_tags dynamically each render so the chip
+        // reflects the current data_store state (PCC entity arrives
+        // asynchronously after data_store.load()).
+        std::string scope_tags = scope_tags_override_;
+        if (scope_tags.empty()) {
+            bool has_pcc = false;
+            for (const auto& e : data_store_.entities) {
+                const std::string& n = e.name;
+                if (n == "PCC"
+                 || n == "Platinum Creek Capital"
+                 || n == "Platinum Creek Capital LLC") {
+                    has_pcc = true;
+                    break;
+                }
+            }
+            scope_tags = has_pcc
+                ? std::string("#pcc + #me-") + user_handle_
+                : std::string("#me-") + user_handle_;
+        }
         const std::string header_left =
             std::string("greylock · ") + user_handle_ + "@greylock"
-            + (scope_tags_.empty() ? std::string() : (" · " + scope_tags_));
+            + (scope_tags.empty() ? std::string() : (" · " + scope_tags));
 
         Element header = hbox({
             text(header_left) | color(kTokens.fg_emphasized),
@@ -192,7 +211,9 @@ private:
     std::string entity_id_;
     std::string user_email_;
     std::string user_handle_{"rory"};
-    std::string scope_tags_;
+    // Caller-supplied tags override the auto-derived "#pcc + #me-..."
+    // computed from data_store_ at render time.
+    std::string scope_tags_override_;
 
     // ---- helpers ------------------------------------------------
     static std::string current_month() {

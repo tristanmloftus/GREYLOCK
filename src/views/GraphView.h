@@ -42,6 +42,14 @@ public:
     void set_depth(int d)                          { depth_ = d < 1 ? 1 : (d > 5 ? 5 : d); }
     void set_principal_name(const std::string& s)  { principal_ = s; }
 
+    // Counts fetched from the v3/v4 endpoints by the App on `:graph`.
+    void set_decision_count(int n)                 { decision_count_ = n; }
+    void set_relationship_count(int n)             { relationship_count_ = n; }
+    void set_target_count(int n)                   { target_count_ = n; }
+    void set_target_names(std::vector<std::string> v) { target_names_ = std::move(v); }
+    void set_relationship_names(std::vector<std::string> v) { relationship_names_ = std::move(v); }
+    void set_decision_titles(std::vector<std::string> v)    { decision_titles_ = std::move(v); }
+
     int  depth() const { return depth_; }
 
     Element render() const {
@@ -109,12 +117,59 @@ public:
             }
         }
 
-        // Knows / Decisions / Relationships counts (v3+).  These read
-        // from the server-side tables once GET /graph lands; until then,
-        // the entries appear as "0 logged" which still matches the
-        // reference structure.
-        rows.push_back(text("  ├── knows · 0 people indexed") | color(kTokens.fg_dim));
-        rows.push_back(text("  ╰── decisions · 0 logged")     | color(kTokens.fg_dim));
+        // Knows / Targets / Decisions counts (v3+) — populated by the
+        // App calling set_*_count after fetching the v3/v4 GET endpoints.
+        if (target_count_ > 0) {
+            rows.push_back(text("  ├── targets · " + std::to_string(target_count_)
+                                + " in pipeline") | color(kTokens.fg_default));
+            // Show up to depth_ target names indented.
+            int shown = 0;
+            const int max_show = std::max(0, std::min<int>((int)target_names_.size(), depth_ + 1));
+            for (; shown < max_show; ++shown) {
+                const bool last = (shown + 1 == max_show);
+                std::string elbow = last ? "╰── " : "├── ";
+                rows.push_back(text("  │   " + elbow + target_names_[shown])
+                               | color(kTokens.fg_default));
+                ++node_count; ++edge_count;
+            }
+            if ((int)target_names_.size() > max_show) {
+                rows.push_back(text("  │       + " +
+                                    std::to_string((int)target_names_.size() - max_show)
+                                    + " more") | color(kTokens.fg_dim));
+            }
+        }
+        if (relationship_count_ > 0) {
+            rows.push_back(text("  ├── knows · " + std::to_string(relationship_count_)
+                                + " " + (relationship_count_ == 1 ? "person" : "people")
+                                + " indexed") | color(kTokens.fg_default));
+            int shown = 0;
+            const int max_show = std::max(0, std::min<int>((int)relationship_names_.size(), depth_ + 1));
+            for (; shown < max_show; ++shown) {
+                const bool last = (shown + 1 == max_show);
+                std::string elbow = last ? "╰── " : "├── ";
+                rows.push_back(text("  │   " + elbow + relationship_names_[shown])
+                               | color(kTokens.fg_default));
+                ++node_count; ++edge_count;
+            }
+        } else {
+            rows.push_back(text("  ├── knows · 0 people indexed") | color(kTokens.fg_dim));
+        }
+        if (decision_count_ > 0) {
+            rows.push_back(text("  ╰── decisions · " + std::to_string(decision_count_)
+                                + " logged") | color(kTokens.fg_default));
+            int shown = 0;
+            const int max_show = std::max(0, std::min<int>((int)decision_titles_.size(), depth_ + 1));
+            for (; shown < max_show; ++shown) {
+                const bool last = (shown + 1 == max_show);
+                std::string elbow = last ? "╰── " : "├── ";
+                rows.push_back(text("      " + elbow + decision_titles_[shown])
+                               | color(kTokens.fg_default));
+                ++node_count;
+            }
+        } else {
+            rows.push_back(text("  ╰── decisions · 0 logged") | color(kTokens.fg_dim));
+        }
+        node_count += target_count_ + relationship_count_ + decision_count_;
 
         // Footer.
         Element footer = hbox({
@@ -138,6 +193,13 @@ private:
     DataStore&  data_store_;
     int         depth_ = 2;
     std::string principal_ = "rory loftus";
+
+    int decision_count_     = 0;
+    int relationship_count_ = 0;
+    int target_count_       = 0;
+    std::vector<std::string> target_names_;
+    std::vector<std::string> relationship_names_;
+    std::vector<std::string> decision_titles_;
 
     static std::string entity_kind_label(const Entity& e) {
         switch (e.type) {
