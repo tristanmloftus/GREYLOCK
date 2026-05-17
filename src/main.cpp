@@ -143,6 +143,133 @@ public:
         graph_view->set_target_names(std::move(t_names));
     }
 
+    // Pre-populate the four content views that HomeView's tiles render
+    // (graph counts + cash position + most-recent decision + most-recent
+    // relationship), then switch to home.  Called from every path that
+    // lands on `current_tab = 0` so the tiles are always live.
+    //
+    // Panel 4/5 ids are hardcoded to the seeded entries until the
+    // "most-recent confirmed decision touching #pcc" / "most-overdue
+    // cadence" queries land.  TODO(rory): swap to query-driven once we
+    // have an audit/recent-decisions feed.
+    void enter_home() {
+        // Panel 2 — graph counts (3 GETs, cheap).
+        refresh_graph_counts();
+
+        // Panel 3 — pinned `:ask pcc cash position`.  AskView::render_tile
+        // hardcodes the scope so we just keep the last_ask_query_ in sync.
+        if (ask_view) ask_view->set_query("pcc cash position");
+        last_ask_query_ = "pcc cash position";
+
+        // Panel 4 — hardcoded services-arm decision id.  GET /decisions/:id
+        // accepts id OR title; "services-arm" lands the seed row.
+        //
+        // TODO(rory): replace with `GET /decisions?most_recent=1&scope=pcc`
+        // once we have a "most recent confirmed decision touching #pcc"
+        // server-side filter.  See style-audit.md § Open Questions.
+        load_decision_for_tile("services-arm");
+
+        // Panel 5 — hardcoded cade hartford for v1.  GET /relationships/:id
+        // is slug-tolerant (token-match in V3ObjectsHandler).
+        //
+        // TODO(rory): replace with `GET /relationships?most_overdue=1`
+        // once we ship a cadence-driven ranking.  See style-audit.md.
+        load_relationship_for_tile("cade-hartford");
+
+        current_tab = 0;
+        focus_.reset();
+    }
+
+    // Helper: GET /decisions/:id, mirror the same JSON→Decision mapping
+    // used by handle_open_command(type="decision"), and set it on
+    // decision_detail_view so render_tile() picks it up.
+    void load_decision_for_tile(const std::string& id) {
+        if (!decision_detail_view) return;
+        auto backend = services.get_backend_client();
+        auto secrets = services.get_secret_store();
+        if (!backend || !secrets) return;
+        const char* em = std::getenv("TF_USER_EMAIL");
+        std::string email = (em && em[0]) ? std::string(em) : std::string();
+        auto raw_tok = secrets->get("tf-session-" + email);
+        if (!raw_tok.has_value()) return;
+        std::string token;
+        for (auto b : *raw_tok) token += static_cast<char>(b);
+        if (token.empty()) return;
+
+        auto r = backend->get("/decisions/" + id, token);
+        if (std::holds_alternative<BackendError>(r)) return;
+        const auto& j = std::get<nlohmann::json>(r);
+        tf::views::Decision d;
+        d.id             = j.value("id", "");
+        d.title          = j.value("title", id);
+        d.body_rationale = j.value("body_md", "");
+        d.deciders       = j.value("decided_by_user_id", std::string("—"));
+        d.status         = j.value("status", "");
+        d.entity_scope   = j.value("entity_scope", "");
+        d.confidence_str = "";
+        d.touches        = {};
+        std::string src = j.value("source_note_id", std::string(""));
+        d.source_vault_path = src.empty() ? std::string("(ingested via SQL seed)") : src;
+        d.outcome_status = j.value("outcome", std::string("not yet logged"));
+        d.outcome_prompt = "";
+        if (j.contains("decided_at_unix") && j["decided_at_unix"].is_number_integer()) {
+            std::time_t t = static_cast<std::time_t>(j["decided_at_unix"].get<int64_t>());
+            std::tm tmb{};
+#ifdef _WIN32
+            gmtime_s(&tmb, &t);
+#else
+            gmtime_r(&t, &tmb);
+#endif
+            char buf[16];
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tmb);
+            d.decided_at_date = buf;
+        }
+        decision_detail_view->set_decision(std::move(d));
+    }
+
+    // Helper: GET /relationships/:id (slug-tolerant) → populate
+    // relationship_detail_view.  Same mapping as handle_open_command.
+    void load_relationship_for_tile(const std::string& id) {
+        if (!relationship_detail_view) return;
+        auto backend = services.get_backend_client();
+        auto secrets = services.get_secret_store();
+        if (!backend || !secrets) return;
+        const char* em = std::getenv("TF_USER_EMAIL");
+        std::string email = (em && em[0]) ? std::string(em) : std::string();
+        auto raw_tok = secrets->get("tf-session-" + email);
+        if (!raw_tok.has_value()) return;
+        std::string token;
+        for (auto b : *raw_tok) token += static_cast<char>(b);
+        if (token.empty()) return;
+
+        auto r = backend->get("/relationships/" + id, token);
+        if (std::holds_alternative<BackendError>(r)) return;
+        const auto& j = std::get<nlohmann::json>(r);
+        tf::views::Relationship rel;
+        rel.display_name      = j.value("display_name", id);
+        rel.role_summary      = j.value("notes_md", std::string("(no role recorded)"));
+        rel.relationship_kind = j.value("kind", std::string(""));
+        rel.cadence_summary   = "—";
+        rel.cadence_ok        = true;
+        rel.working_on        = "—";
+        if (j.contains("last_contact_unix") && j["last_contact_unix"].is_number_integer()) {
+            std::time_t t = static_cast<std::time_t>(j["last_contact_unix"].get<int64_t>());
+            std::tm tmb{};
+#ifdef _WIN32
+            gmtime_s(&tmb, &t);
+#else
+            gmtime_r(&t, &tmb);
+#endif
+            char buf[16];
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tmb);
+            rel.last_real_conversation = buf;
+        } else {
+            rel.last_real_conversation = "—";
+        }
+        rel.last_text_exchange = "—";
+        relationship_detail_view->set_relationship(std::move(rel));
+    }
+
     // Parse the argument string of an `:open <args>` palette command
     // and populate the matching detail view from the backend.
     // Supported forms:
@@ -469,6 +596,14 @@ public:
             }
             graph_view->set_principal_name(handle_for_graph + " loftus");
         }
+        // Now that all four tile content views exist, hand non-owning
+        // pointers to HomeView so its render_tile() composer can call
+        // each view's tile-mode render every frame.  HomeView itself
+        // owns no state for these; it only orchestrates layout.
+        home_view->set_tile_views(graph_view.get(),
+                                  ask_view.get(),
+                                  decision_detail_view.get(),
+                                  relationship_detail_view.get());
         tasks_view = std::make_unique<PlaceholderView>(
             "Tasks",
             "Open / in-progress / done. `c` to complete; due-date sort.",
@@ -515,6 +650,13 @@ public:
         palette_.set_dispatcher([this](tf::utils::CommandId id) {
             dispatch(id);
         });
+
+        // First-paint tile population.  Cheap when there's no cached
+        // session yet (the load_* helpers no-op) so we always pay the
+        // call but only pay the GETs after login.  Without this, the
+        // first frame of the new tiled HomeView shows empty tiles until
+        // the user navigates away and back.
+        enter_home();
     }
 
     void update_views_for_entity() {
@@ -577,7 +719,7 @@ public:
         using tf::utils::CommandId;
         switch (id) {
             case CommandId::SwitchView_Dashboard:
-                current_tab = 0; focus_.reset(); return;
+                enter_home(); return;
             case CommandId::SwitchView_Accounts:
                 current_tab = 1; focus_.reset(); return;
             case CommandId::SwitchView_Transactions:
@@ -1592,7 +1734,7 @@ int main(int argc, char** argv) {
         if (app.g_pending) {
             app.g_pending = false;
             // v1 surfaces
-            if      (event == Event::Character('d')) { app.current_tab = 0;  app.focus_.reset(); return true; }
+            if      (event == Event::Character('d')) { app.enter_home(); return true; }
             else if (event == Event::Character('a')) { app.current_tab = 1;  app.focus_.reset(); return true; }
             else if (event == Event::Character('t')) { app.current_tab = 2;  app.focus_.reset(); return true; }
             else if (event == Event::Character('b')) { app.current_tab = 3;  app.focus_.reset(); return true; }

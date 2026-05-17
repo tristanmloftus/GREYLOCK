@@ -61,6 +61,44 @@ public:
     void clear()                  { d_ = Decision{}; has_data_ = false; }
     bool has_data() const         { return has_data_; }
 
+    // Tile mode for HomeView's panel 4.  Drops the two-column field
+    // layout in favor of a 4-row meta block + 2-line rationale + a
+    // compressed alternatives bullet list.  Reuses DetailViewCommon
+    // builders so style stays single-sourced.
+    Element render_tile() const {
+        using namespace ftxui;
+        using namespace tf::views::detail;
+        if (!has_data_) {
+            return vbox({
+                text(""),
+                text("  decision · (no recent decision)") | color(kTokens.fg_emphasized),
+                text(""),
+                text("  Log one via vault → ingest, or `:open decision <id>`.")
+                  | color(kTokens.fg_dim),
+            }) | flex;
+        }
+        Element header = header_strip("decision", d_.title,
+                                       d_.decided_at_date.empty() ? "—" : d_.decided_at_date);
+        Element meta = vbox({
+            label_row("status",       d_.status, 14),
+            label_row("entity scope", d_.entity_scope, 14),
+            label_row("deciders",     d_.deciders, 14),
+            label_row("outcome",      d_.outcome_status, 14),
+        });
+        return vbox({
+            header,
+            separator() | color(kTokens.fg_dim),
+            meta,
+            text(""),
+            heading("rationale"),
+            body_paragraph(d_.body_rationale),
+            text(""),
+            heading("alternatives"),
+            bulleted_list(d_.alternatives, "—"),
+            filler(),
+        }) | flex;
+    }
+
     Element render() const {
         using namespace ftxui;
         using namespace tf::views::detail;

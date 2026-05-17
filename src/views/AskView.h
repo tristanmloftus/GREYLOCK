@@ -41,6 +41,15 @@ public:
     void clear()                    { query_.clear(); has_query_ = false; }
     bool has_query() const          { return has_query_; }
 
+    // Tile mode for HomeView's panel 3 — pinned default ask:
+    // `ask pcc cash position`.  Reuses render_cash_position() so layout
+    // discipline (bars, separator, source line) stays single-sourced.
+    // Framework-drift annotation arrives once a "three-tier capital
+    // framework" decision is logged (rendered amber inside the helper).
+    Element render_tile() const {
+        return render_cash_position("pcc");
+    }
+
     Element render() const {
         using namespace ftxui;
         if (!has_query_) {

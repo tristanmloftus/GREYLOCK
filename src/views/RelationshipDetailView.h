@@ -57,6 +57,47 @@ public:
     void clear()                          { r_ = Relationship{}; has_data_ = false; }
     bool has_data() const                 { return has_data_; }
 
+    // Tile mode for HomeView's panel 5.  Single column: identity +
+    // cadence + working_on + last_real + sparkline.  Drops the right
+    // rail (he-owes / you-owe / relevant decisions) — those stay
+    // exclusive to the full-pane view.  Reuses DetailViewCommon
+    // builders so style stays single-sourced.
+    Element render_tile() const {
+        using namespace ftxui;
+        using namespace tf::views::detail;
+        if (!has_data_) {
+            return vbox({
+                text(""),
+                text("  person · (no recent interaction)") | color(kTokens.fg_emphasized),
+                text(""),
+                text("  Use `:open <name>` to open a relationship.")
+                  | color(kTokens.fg_dim),
+            }) | flex;
+        }
+        Element header = hbox({
+            text(r_.display_name) | color(kTokens.fg_emphasized) | bold,
+        });
+        Element cadence_row = hbox({
+            text("  cadence") | color(kTokens.fg_dim) | size(WIDTH, EQUAL, 18),
+            text(maybe(r_.cadence_summary))
+              | color(r_.cadence_ok ? kTokens.accent_positive : kTokens.accent_warning),
+        });
+        return vbox({
+            header,
+            separator() | color(kTokens.fg_dim),
+            label_row("role",         r_.role_summary),
+            label_row("relationship", r_.relationship_kind),
+            cadence_row,
+            text(""),
+            label_row("working on",   r_.working_on),
+            label_row("last real",    r_.last_real_conversation),
+            text(""),
+            heading("interaction · 90d"),
+            text("  " + sparkline(r_.interactions_90d)) | color(kTokens.thesis_up),
+            filler(),
+        }) | flex;
+    }
+
     Element render() const {
         using namespace ftxui;
         using namespace tf::views::detail;

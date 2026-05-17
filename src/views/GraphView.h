@@ -52,11 +52,57 @@ public:
 
     int  depth() const { return depth_; }
 
+    // Tile mode for HomeView's 5-panel grid (reference Panel 2).  Depth
+    // is pinned to 2; footer hint condensed to one line; no chrome
+    // interaction (`f` / `enter` hints stripped since the tile is read-
+    // only — the user navigates via `g G` to get the full-pane GraphView).
+    Element render_tile() const {
+        using namespace ftxui;
+        int nodes = 0, edges = 0;
+        Elements rows = build_tree_rows(/*pinned_depth=*/2, nodes, edges);
+        // Condensed footer: command-only, no count chrome.
+        Element footer = text("  graph --depth 2 · "
+                              + std::to_string(nodes) + " nodes · "
+                              + std::to_string(edges) + " edges")
+                       | color(kTokens.fg_dim);
+        return vbox({
+            rows.empty() ? text("") : vbox(std::move(rows)),
+            filler(),
+            footer,
+        }) | flex;
+    }
+
     Element render() const {
         using namespace ftxui;
+        int nodes = 0, edges = 0;
+        Elements rows = build_tree_rows(depth_, nodes, edges);
+        Element footer = hbox({
+            text("  depth " + std::to_string(depth_) + " · " +
+                 std::to_string(nodes) + " nodes · " +
+                 std::to_string(edges) + " edges · "
+                 "filter: f · expand: enter")
+              | color(kTokens.fg_dim),
+        });
+        return vbox({
+            text(""),
+            rows.empty() ? text("") : vbox(std::move(rows)),
+            filler(),
+            separator() | color(kTokens.fg_dim),
+            footer,
+        }) | flex;
+    }
+
+private:
+    // Build the typed-knowledge-graph tree rows.  Shared between
+    // render() (full-pane) and render_tile() (HomeView grid).  Mutates
+    // node_count / edge_count for footer aggregation.
+    Elements build_tree_rows(int eff_depth,
+                             int& node_count,
+                             int& edge_count) const {
+        using namespace ftxui;
         Elements rows;
-        int node_count = 1;   // root
-        int edge_count = 0;
+        node_count = 1;
+        edge_count = 0;
 
         rows.push_back(text("  you · " + principal_) | color(kTokens.fg_emphasized));
 
@@ -76,7 +122,7 @@ public:
             ++node_count; ++edge_count;
             (void)last_entity;
 
-            if (depth_ < 2) continue;
+            if (eff_depth < 2) continue;
 
             // Accounts under this entity.
             auto accounts = data_store_.get_accounts_for_entity(e.id);
@@ -124,7 +170,7 @@ public:
                                 + " in pipeline") | color(kTokens.fg_default));
             // Show up to depth_ target names indented.
             int shown = 0;
-            const int max_show = std::max(0, std::min<int>((int)target_names_.size(), depth_ + 1));
+            const int max_show = std::max(0, std::min<int>((int)target_names_.size(), eff_depth + 1));
             for (; shown < max_show; ++shown) {
                 const bool last = (shown + 1 == max_show);
                 std::string elbow = last ? "╰── " : "├── ";
@@ -143,7 +189,7 @@ public:
                                 + " " + (relationship_count_ == 1 ? "person" : "people")
                                 + " indexed") | color(kTokens.fg_default));
             int shown = 0;
-            const int max_show = std::max(0, std::min<int>((int)relationship_names_.size(), depth_ + 1));
+            const int max_show = std::max(0, std::min<int>((int)relationship_names_.size(), eff_depth + 1));
             for (; shown < max_show; ++shown) {
                 const bool last = (shown + 1 == max_show);
                 std::string elbow = last ? "╰── " : "├── ";
@@ -158,7 +204,7 @@ public:
             rows.push_back(text("  ╰── decisions · " + std::to_string(decision_count_)
                                 + " logged") | color(kTokens.fg_default));
             int shown = 0;
-            const int max_show = std::max(0, std::min<int>((int)decision_titles_.size(), depth_ + 1));
+            const int max_show = std::max(0, std::min<int>((int)decision_titles_.size(), eff_depth + 1));
             for (; shown < max_show; ++shown) {
                 const bool last = (shown + 1 == max_show);
                 std::string elbow = last ? "╰── " : "├── ";
@@ -170,26 +216,9 @@ public:
             rows.push_back(text("  ╰── decisions · 0 logged") | color(kTokens.fg_dim));
         }
         node_count += target_count_ + relationship_count_ + decision_count_;
-
-        // Footer.
-        Element footer = hbox({
-            text("  depth " + std::to_string(depth_) + " · " +
-                 std::to_string(node_count) + " nodes · " +
-                 std::to_string(edge_count) + " edges · "
-                 "filter: f · expand: enter")
-              | color(kTokens.fg_dim),
-        });
-
-        return vbox({
-            text(""),
-            vbox(std::move(rows)),
-            filler(),
-            separator() | color(kTokens.fg_dim),
-            footer,
-        }) | flex;
+        return rows;
     }
 
-private:
     DataStore&  data_store_;
     int         depth_ = 2;
     std::string principal_ = "rory loftus";
