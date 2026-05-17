@@ -437,27 +437,10 @@ public:
                 home_view->set_user_handle(
                     at == std::string::npos ? email : email.substr(0, at));
             }
-            // Scope tags: "#pcc + #me-<handle>" when both exist, else
-            // just the side that does. Matches the reference header.
-            bool has_pcc = false;
-            for (const auto& e : data_store.entities) {
-                if (e.name == "PCC"
-                    || e.name == "Platinum Creek Capital"
-                    || e.name == "Platinum Creek Capital LLC") {
-                    has_pcc = true;
-                    break;
-                }
-            }
-            std::string handle = "rory";
-            if (const char* em = std::getenv("TF_USER_EMAIL"); em && em[0]) {
-                std::string e = em;
-                auto at = e.find('@');
-                handle = (at == std::string::npos) ? e : e.substr(0, at);
-            }
-            std::string tags;
-            if (has_pcc) tags = "#pcc + #me-" + handle;
-            else         tags = "#me-" + handle;
-            home_view->set_scope_tags(tags);
+            // Scope tags are recomputed inside HomeView::render() against
+            // the live data_store, so we don't seed an override here —
+            // data_store.load() may not have populated the PCC entity
+            // yet at App-construction time.
         }
 
         // v3 scaffolds.
