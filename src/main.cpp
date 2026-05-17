@@ -744,7 +744,7 @@ public:
             case 5:  cmd_for_tab = "notes";          break;
             case 6:  cmd_for_tab =
                 decision_detail_view->has_data()
-                    ? "open decision " + last_open_arg_
+                    ? "open " + last_open_arg_
                     : "decisions";               break;
             case 7:  cmd_for_tab = "tasks";          break;
             case 8:  cmd_for_tab = "events";         break;
