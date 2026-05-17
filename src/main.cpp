@@ -102,74 +102,150 @@ public:
     // command-header chrome reflects what produced the view.
     std::string last_graph_cmd_;
 
-    // Parse the argument string of an `:open <args>` palette command.
-    // Today we don't yet have server endpoints for the v3/v4 typed
-    // objects, so we populate the detail-view PODs with the argument
-    // text and a "no record yet" status.  When endpoints land, the
-    // body of this method swaps to a real lookup; the view contract
-    // stays the same.
+    // Parse the argument string of an `:open <args>` palette command
+    // and populate the matching detail view from the backend.
+    // Supported forms:
+    //   open decision <id-or-title>
+    //   open target <id-or-name>
+    //   open <name>            → tries relationships first
     void handle_open_command(std::string args) {
         last_open_arg_ = args;
         auto sp = args.find(' ');
         std::string type;
         std::string id;
-        if (sp == std::string::npos) {
-            type = "auto";   // disambiguate by id alone
-            id   = args;
-        } else {
-            type = args.substr(0, sp);
-            id   = args.substr(sp + 1);
+        if (sp == std::string::npos) { type = "auto"; id = args; }
+        else                          { type = args.substr(0, sp); id = args.substr(sp + 1); }
+
+        auto backend = services.get_backend_client();
+        auto secrets = services.get_secret_store();
+        if (!backend || !secrets) {
+            status_message = "open: backend not configured";
+            return;
+        }
+        const char* em = std::getenv("TF_USER_EMAIL");
+        std::string email = (em && em[0]) ? std::string(em) : std::string();
+        auto raw_tok = secrets->get("tf-session-" + email);
+        std::string token;
+        if (raw_tok.has_value()) {
+            for (auto b : *raw_tok) token += static_cast<char>(b);
+        }
+        if (token.empty()) {
+            status_message = "open: no cached session; run --login";
+            return;
         }
 
+        auto url_encode = [](const std::string& s) {
+            std::string out;
+            for (unsigned char c : s) {
+                if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                    out += static_cast<char>(c);
+                } else {
+                    char buf[4];
+                    std::snprintf(buf, sizeof(buf), "%%%02X", c);
+                    out += buf;
+                }
+            }
+            return out;
+        };
+
         if (type == "decision") {
+            auto r = backend->get("/decisions/" + url_encode(id), token);
+            if (std::holds_alternative<BackendError>(r)) {
+                status_message = "open decision: " +
+                    std::get<BackendError>(r).message;
+                return;
+            }
+            const auto& j = std::get<nlohmann::json>(r);
             tf::views::Decision d;
-            d.id              = id;
-            d.title           = id;
-            d.body_rationale  = "";
-            d.deciders        = "";
-            d.status          = "no record yet";
-            d.entity_scope    = "—";
-            d.confidence_str  = "—";
-            d.touches         = {};
-            d.source_vault_path  = "vault/decisions/" + id + ".md (not ingested)";
-            d.source_commit_sha  = "—";
-            d.outcome_status     = "—";
-            d.outcome_prompt     = "";
-            d.decided_at_date    = "—";
+            d.id             = j.value("id", "");
+            d.title          = j.value("title", id);
+            d.body_rationale = j.value("body_md", "");
+            d.deciders       = j.value("decided_by_user_id", std::string("—"));
+            d.status         = j.value("status", "");
+            d.entity_scope   = j.value("entity_scope", "");
+            // confidence isn't stored in the schema today; reserved.
+            d.confidence_str = "";
+            d.touches        = {};
+            // source pointer comes from source_note_id (vault path) if set.
+            std::string src = j.value("source_note_id", std::string(""));
+            d.source_vault_path = src.empty() ? std::string("(ingested via SQL seed)") : src;
+            d.source_commit_sha = "";
+            d.outcome_status = j.value("outcome", std::string("not yet logged"));
+            d.outcome_prompt = "";
+            if (j.contains("decided_at_unix") && j["decided_at_unix"].is_number_integer()) {
+                std::time_t t = static_cast<std::time_t>(j["decided_at_unix"].get<int64_t>());
+                std::tm tmb{};
+#ifdef _WIN32
+                gmtime_s(&tmb, &t);
+#else
+                gmtime_r(&t, &tmb);
+#endif
+                char buf[16];
+                std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tmb);
+                d.decided_at_date = buf;
+            }
             decision_detail_view->set_decision(std::move(d));
             current_tab = 6;
             focus_.reset();
             return;
         }
         if (type == "target") {
-            // Targets get rendered as relationships-with-stage for now;
-            // proper TargetDetailView lands when targets data flow does.
-            tf::views::Relationship r;
-            r.display_name      = id;
-            r.role_summary      = "target · stage: lead (no record yet)";
-            r.relationship_kind = "—";
-            r.cadence_summary   = "—";
-            r.cadence_ok        = false;
-            r.working_on        = "—";
-            r.last_real_conversation = "—";
-            r.last_text_exchange     = "—";
-            relationship_detail_view->set_relationship(std::move(r));
+            auto r = backend->get("/targets/" + url_encode(id), token);
+            if (std::holds_alternative<BackendError>(r)) {
+                status_message = "open target: " +
+                    std::get<BackendError>(r).message;
+                return;
+            }
+            const auto& j = std::get<nlohmann::json>(r);
+            tf::views::Relationship rel;
+            rel.display_name      = j.value("name", id);
+            rel.role_summary      = "target · stage: " + j.value("stage", std::string("lead"));
+            rel.relationship_kind = "pcc pipeline";
+            rel.cadence_summary   = "—";
+            rel.cadence_ok        = true;
+            rel.working_on        = j.value("thesis_md", std::string("—"));
+            rel.last_real_conversation = "—";
+            rel.last_text_exchange     = "—";
+            relationship_detail_view->set_relationship(std::move(rel));
             current_tab = 11;
+            focus_.reset();
             return;
         }
-        // person / account / auto / anything-else: open as relationship
-        tf::views::Relationship r;
-        r.display_name      = id;
-        r.role_summary      = "(no record yet)";
-        r.relationship_kind = "—";
-        r.cadence_summary   = "—";
-        r.cadence_ok        = false;
-        r.working_on        = "—";
-        r.last_real_conversation = "—";
-        r.last_text_exchange     = "—";
-        relationship_detail_view->set_relationship(std::move(r));
-        current_tab = 11;
-        focus_.reset();
+        // person / auto / anything-else: open as relationship
+        {
+            auto r = backend->get("/relationships/" + url_encode(id), token);
+            if (std::holds_alternative<BackendError>(r)) {
+                status_message = "open: " +
+                    std::get<BackendError>(r).message;
+                return;
+            }
+            const auto& j = std::get<nlohmann::json>(r);
+            tf::views::Relationship rel;
+            rel.display_name      = j.value("display_name", id);
+            rel.role_summary      = j.value("notes_md", std::string("(no role recorded)"));
+            rel.relationship_kind = j.value("kind", std::string(""));
+            rel.cadence_summary   = "—";
+            rel.cadence_ok        = true;
+            rel.working_on        = "—";
+            if (j.contains("last_contact_unix") && j["last_contact_unix"].is_number_integer()) {
+                std::time_t t = static_cast<std::time_t>(j["last_contact_unix"].get<int64_t>());
+                std::tm tmb{};
+#ifdef _WIN32
+                gmtime_s(&tmb, &t);
+#else
+                gmtime_r(&t, &tmb);
+#endif
+                char buf[16];
+                std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tmb);
+                rel.last_real_conversation = buf;
+            } else {
+                rel.last_real_conversation = "—";
+            }
+            rel.last_text_exchange = "—";
+            relationship_detail_view->set_relationship(std::move(rel));
+            current_tab = 11;
+            focus_.reset();
+        }
     }
 
     int current_entity = 0;

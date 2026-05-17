@@ -10,6 +10,7 @@
 #include "data/CategoriesHandler.h"
 #include "data/BudgetsHandler.h"
 #include "data/PlaidLinkHandler.h"
+#include "data/V3ObjectsHandler.h"
 #include "plaid/PlaidTokenBroker.h"
 #include "plaid/PlaidApiClient.h"
 #include "plaid/PlaidSyncScheduler.h"
@@ -436,6 +437,9 @@ int main(int argc, char* argv[]) {
         tf::data::register_plaid_link_handlers(
             server.raw_server(), db, *plaid_api_ptr, *plaid_broker_ptr);
     }
+
+    // v3/v4 read-only GET endpoints for decisions, relationships, targets.
+    tf::data::register_v3_objects_handlers(server.raw_server(), db);
 
     // TODO(v0.4-server): wire GET /sync-status endpoint.
     //

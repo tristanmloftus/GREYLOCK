@@ -1354,6 +1354,7 @@ set(SERVER_DATA_SOURCES
   server/data/CategoriesHandler.cpp
   server/data/BudgetsHandler.cpp
   server/data/PlaidLinkHandler.cpp
+  server/data/V3ObjectsHandler.cpp
 )
 
 target_sources(greylock-server PRIVATE ${SERVER_DATA_SOURCES})
