@@ -36,8 +36,10 @@
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
 #include "views/CategoriesView.h"
+#include "views/DecisionDetailView.h"
 #include "views/HomeView.h"
 #include "views/PlaceholderView.h"
+#include "views/RelationshipDetailView.h"
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
 #include "views/CommandPalette.h"
@@ -78,6 +80,13 @@ public:
     std::unique_ptr<PlaceholderView> targets_view;
     std::unique_ptr<PlaceholderView> relationships_view;
     std::unique_ptr<PlaceholderView> real_estate_view;
+
+    // Object detail views (reference Panels 4 + 5). Reached via
+    // `:open <type> <id>` which sets the underlying POD then routes
+    // current_tab to 14 / 15.  Each view stays in "no data" mode
+    // until populated.
+    std::unique_ptr<tf::views::DecisionDetailView>     decision_detail_view;
+    std::unique_ptr<tf::views::RelationshipDetailView> relationship_detail_view;
 
     int current_entity = 0;
     int current_tab = 0;
@@ -252,10 +261,15 @@ public:
             "Notes",
             "The vault is the input pipe. Markdown files in ~/Greylock/vault/",
             "v3: schema live (M008). Vault ingestion + auto-commit next.");
+        // Note: decisions_view is still allocated for the dispatch switch's
+        // sake; the real DecisionDetailView lives separately and is reached
+        // when an `:open decision <id>` command lands.
         decisions_view = std::make_unique<PlaceholderView>(
             "Decisions",
-            "Chronological feed of decisions, with outcome tracking once >90d.",
-            "v3: decisions table live (M008). Detail/outcome flow next.");
+            "Chronological feed; `:open decision <id>` jumps to full detail.",
+            "v3: decisions table live (M008). Per-row detail view ready (see g D again after `:open`).");
+        decision_detail_view = std::make_unique<tf::views::DecisionDetailView>();
+        relationship_detail_view = std::make_unique<tf::views::RelationshipDetailView>();
         tasks_view = std::make_unique<PlaceholderView>(
             "Tasks",
             "Open / in-progress / done. `c` to complete; due-date sort.",
@@ -471,9 +485,19 @@ public:
             case CommandId::Whoami:
                 status_message = "Whoami: run greylock --whoami from CLI.";
                 return;
-            case CommandId::Refresh:
-                status_message = "Refresh: backend sync not wired in v0.3-4.";
+            case CommandId::Refresh: {
+                // Re-pull entities/accounts/transactions/categories/budgets
+                // from the backend.  Used after linking a new bank to
+                // show the new account + first sync without restarting
+                // the TUI.
+                if (data_store.load()) {
+                    status_message = "Refreshed from backend.";
+                } else {
+                    status_message = "Refresh failed: " + data_store.get_last_error();
+                }
+                update_views_for_entity();
                 return;
+            }
             case CommandId::Search_Transactions:
                 // Search box lands in a later v0.3 task; until then we
                 // route the user to the Transactions view and leave a
@@ -525,12 +549,16 @@ public:
                 case 3:  return budget_view->render(month);
                 case 4:  return categories_view->render();
                 case 5:  return notes_view->render();
-                case 6:  return decisions_view->render();
+                case 6:  return decision_detail_view->has_data()
+                                  ? decision_detail_view->render()
+                                  : decisions_view->render();
                 case 7:  return tasks_view->render();
                 case 8:  return events_view->render();
                 case 9:  return proposals_view->render();
                 case 10: return targets_view->render();
-                case 11: return relationships_view->render();
+                case 11: return relationship_detail_view->has_data()
+                                  ? relationship_detail_view->render()
+                                  : relationships_view->render();
                 case 12: return real_estate_view->render();
                 case 13: return dashboard_view->render(month, &focus_);     // widget grid (Snapshot)
                 default: return text("Unknown") | color(LED_BLUE);
@@ -1301,7 +1329,11 @@ int main(int argc, char** argv) {
             app.save();
             return true;
         }
-        // Link Plaid account (v0.2: server-mediated Plaid Link flow)
+        // Link Plaid account.  Non-blocking: mints the URL, opens local
+        // browser if possible, and stashes the URL so the user can copy
+        // it manually when the TUI runs on a headless host (skynet over
+        // ssh -t).  After completing the Plaid Link flow in the browser,
+        // the user presses 'R' to refresh and the linked account shows up.
         if (event == Event::Character('l') || event == Event::Character('L')) {
             if (app.current_tab == 1) {
                 auto plaid = app.services.get_plaid();
@@ -1315,18 +1347,22 @@ int main(int argc, char** argv) {
                 int selected = app.accounts_view->get_selected();
                 if (selected >= 0 && selected < (int)accounts.size()) {
                     const auto& acc = *accounts[selected];
-                    app.status_message = "Linking account '" + acc.name + "' via Plaid...";
-                    bool ok = plaid->initiate_link_flow(acc.id);
+                    bool ok = plaid->prepare_link_flow(acc.id);
                     if (ok) {
-                        app.status_message = "Account '" + acc.name + "' linked successfully.";
+                        // Display the URL prominently; clickable in
+                        // OSC-8-aware terminals (iTerm2, macOS Terminal).
+                        const std::string url = plaid->last_link_url();
+                        app.status_message =
+                            "Open in your browser to link '" + acc.name + "':  " + url +
+                            "    (after linking, type :refresh to pick up the new account)";
                     } else {
-                        app.status_message = "Link failed: " + plaid->get_last_error();
+                        app.status_message = "Link prepare failed: " + plaid->get_last_error();
                     }
                 } else {
                     app.status_message = "No account selected.";
                 }
             } else {
-                app.status_message = "Switch to Accounts view (Tab) to link an account.";
+                app.status_message = "Switch to Accounts (g a) to link an account.";
             }
             return true;
         }

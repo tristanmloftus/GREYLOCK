@@ -69,10 +69,29 @@ public:
 
     // Initiate the full Plaid Link flow for account_id.
     // 1. POST /accounts/:id/link/init → gets link_token
-    // 2. Open browser to Plaid Link page
-    // 3. Poll is_plaid_linked (2s × up to 150 = 5 min timeout)
-    // Returns true once the account is linked.
+    // 2. Try to open browser to Plaid Link page (may no-op on headless hosts)
+    // 3. Poll for completion (2s × up to 150 = 5 min timeout)
+    // Returns true once the account is linked.  The URL the user's browser
+    // should hit is stored in last_link_url() regardless — callers can
+    // surface it to the user even when the local browser launch failed.
     virtual bool initiate_link_flow(const std::string& account_id) = 0;
+
+    // URL the user's browser should hit to complete the most-recent
+    // initiate_link_flow.  Empty if no flow has run, or if the /link/init
+    // call failed before a URL was constructed.
+    virtual std::string last_link_url() const = 0;
+
+    // Non-blocking variant of initiate_link_flow: mint the link_token,
+    // build the user-facing URL, try to open the local browser, and
+    // return immediately.  The caller surfaces last_link_url() to the
+    // user and refreshes account state when the user is done in the
+    // browser (Accounts view's 'R' or a follow-up sync).
+    //
+    // Returns true if the URL was minted (i.e. POST /link/init succeeded);
+    // false if minting failed (network / auth / Plaid error).  Whether
+    // the local browser actually opened is irrelevant — that's a soft
+    // failure on headless hosts.
+    virtual bool prepare_link_flow(const std::string& account_id) = 0;
 
     // Retrieve cached transactions for the given account from the server.
     // The server performs the Plaid API call using the stored encrypted token.
@@ -110,6 +129,12 @@ public:
     bool initiate_link_flow(const std::string& /*account_id*/) override {
         return true;
     }
+
+    bool prepare_link_flow(const std::string& /*account_id*/) override {
+        return true;
+    }
+
+    std::string last_link_url() const override { return ""; }
 
     std::vector<PlaidTransaction> get_transactions(
         const std::string& /*account_id*/,

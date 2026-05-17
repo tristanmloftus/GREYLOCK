@@ -60,6 +60,15 @@ std::string backend_host_from_env() {
     return strip_port(extract_host_and_port(backend_url));
 }
 
+// Pull the host (without port) from TF_BROWSER_URL env var, if set.
+// This is the URL the user's browser hits when the TUI itself runs on
+// a remote host (the Tailscale IP of that host, typically).
+std::string browser_host_from_env() {
+    const char* browser_url = std::getenv("TF_BROWSER_URL");
+    if (!browser_url || browser_url[0] == '\0') return "";
+    return strip_port(extract_host_and_port(browser_url));
+}
+
 } // namespace
 
 bool sanitize_url(std::string_view url) {
@@ -96,9 +105,14 @@ bool sanitize_url(std::string_view url) {
 
     // Allowed hosts:
     //   1. The host of TF_BACKEND_URL (the server we talk to).
-    //   2. localhost / 127.0.0.1 (dev fallback if TF_BACKEND_URL is unset).
+    //   2. The host of TF_BROWSER_URL (when set, this is the URL the
+    //      user's browser hits — e.g. the Tailscale IP of a remote
+    //      server hosting the TUI's backend).
+    //   3. localhost / 127.0.0.1 (dev fallback if neither env is set).
     std::string backend_host = backend_host_from_env();
     if (!backend_host.empty() && host == backend_host) return true;
+    std::string browser_host = browser_host_from_env();
+    if (!browser_host.empty() && host == browser_host) return true;
     if (host == "localhost") return true;
     if (host == "127.0.0.1") return true;
 

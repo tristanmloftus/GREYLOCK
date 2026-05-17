@@ -38,6 +38,8 @@ public:
     }
 
     bool initiate_link_flow(const std::string& account_id) override {
+        last_link_url_.clear();
+
         auto result = backend_->post(
             "/accounts/" + account_id + "/link/init", nlohmann::json::object());
         if (std::holds_alternative<BackendError>(result)) {
@@ -58,20 +60,38 @@ public:
         // endpoint. The backend serves an HTML page that loads
         // cdn.plaid.com's JS SDK inside the page. The TUI never opens
         // cdn.plaid.com directly; OpenBrowser's sanitizer rejects it.
+        //
+        // TF_BROWSER_URL overrides TF_BACKEND_URL for the URL the user's
+        // browser will actually fetch.  When the TUI runs on a headless
+        // server reachable over Tailscale, TF_BACKEND_URL is typically
+        // https://localhost:8443 (loopback inside the box) but the user's
+        // browser must hit the tailnet IP — set TF_BROWSER_URL to that.
+        const char* browser_url_env = std::getenv("TF_BROWSER_URL");
         const char* backend_url_env = std::getenv("TF_BACKEND_URL");
-        std::string backend_url =
-            (backend_url_env && backend_url_env[0] != '\0')
-                ? std::string(backend_url_env)
-                : std::string("https://localhost:8443");
-        std::string link_url = backend_url +
+        std::string base_url =
+            (browser_url_env && browser_url_env[0] != '\0') ? std::string(browser_url_env)
+          : (backend_url_env && backend_url_env[0] != '\0') ? std::string(backend_url_env)
+          : std::string("https://localhost:8443");
+        std::string link_url = base_url +
             "/link?account_id=" + account_id +
             "&link_token=" + link_token;
+        last_link_url_ = link_url;
 
-        if (!open_browser(link_url)) {
-            last_error_ = "initiate_link_flow: failed to open browser";
-            return false;
+        // Try to open the browser locally.  On a Mac client this opens
+        // Safari; on a headless Linux TUI host it will fail.  Either
+        // way last_link_url_ is set so the TUI can display the URL for
+        // the user to click/copy.
+        const bool browser_opened = open_browser(link_url);
+        if (!browser_opened) {
+            Logger::instance().info(
+                "PlaidService::initiate_link_flow: browser did not open locally; "
+                "URL surfaced for user copy.");
         }
 
+        // Poll the backend for sync completion.  Browser launching is
+        // optional now — the user might copy the URL into Safari on a
+        // different machine.  We still wait so the TUI can show
+        // "linked" once the browser hits POST /accounts/:id/link-plaid.
         int max_polls = 150;
         for (int i = 0; i < max_polls; ++i) {
             auto sync_result = backend_->post(
@@ -84,6 +104,42 @@ public:
 
         last_error_ = "initiate_link_flow: timeout waiting for link completion";
         return false;
+    }
+
+    std::string last_link_url() const override { return last_link_url_; }
+
+    // Non-blocking: mint URL, try local browser, return immediately.
+    bool prepare_link_flow(const std::string& account_id) override {
+        last_link_url_.clear();
+
+        auto result = backend_->post(
+            "/accounts/" + account_id + "/link/init", nlohmann::json::object());
+        if (std::holds_alternative<BackendError>(result)) {
+            last_error_ = "prepare_link_flow: " +
+                std::get<BackendError>(result).message;
+            return false;
+        }
+
+        auto& json = std::get<nlohmann::json>(result);
+        auto link_token_it = json.find("link_token");
+        if (link_token_it == json.end() || !link_token_it->is_string()) {
+            last_error_ = "prepare_link_flow: no link_token in response";
+            return false;
+        }
+        std::string link_token = link_token_it->get<std::string>();
+
+        const char* browser_url_env = std::getenv("TF_BROWSER_URL");
+        const char* backend_url_env = std::getenv("TF_BACKEND_URL");
+        std::string base_url =
+            (browser_url_env && browser_url_env[0] != '\0') ? std::string(browser_url_env)
+          : (backend_url_env && backend_url_env[0] != '\0') ? std::string(backend_url_env)
+          : std::string("https://localhost:8443");
+        last_link_url_ = base_url +
+            "/link?account_id=" + account_id +
+            "&link_token=" + link_token;
+
+        (void)open_browser(last_link_url_);  // best-effort; ignore result.
+        return true;
     }
 
     std::vector<PlaidTransaction> get_transactions(
@@ -131,6 +187,7 @@ public:
 
 private:
     mutable std::string last_error_;
+    std::string last_link_url_;
     std::chrono::seconds timeout_{30};
     std::shared_ptr<BackendClient> backend_;
 };
