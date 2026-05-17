@@ -106,6 +106,9 @@ const std::array<Command, kCommandCount> kCommands = {{
       "Switch view: Relationships",      "relationships", "g R" },
     { CommandId::SwitchView_RealEstate,
       "Switch view: Real Estate",        "real-estate",   "g r" },
+
+    { CommandId::SwitchView_Snapshot,
+      "Switch view: Snapshot (widgets)", "snapshot",      "g s" },
 }};
 
 }  // namespace

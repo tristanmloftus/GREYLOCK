@@ -36,6 +36,7 @@
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
 #include "views/CategoriesView.h"
+#include "views/HomeView.h"
 #include "views/PlaceholderView.h"
 #include "views/FocusController.h"
 #include "views/drills/Drill_NetWorth.h"
@@ -59,7 +60,8 @@ class App {
 public:
     ServiceContainer services;
     DataStore data_store;
-    std::unique_ptr<DashboardView> dashboard_view;
+    std::unique_ptr<HomeView> home_view;
+    std::unique_ptr<DashboardView> dashboard_view;   // widget grid; reachable via `g s` (Snapshot)
     std::unique_ptr<AccountsView> accounts_view;
     std::unique_ptr<TransactionsView> transactions_view;
     std::unique_ptr<BudgetView> budget_view;
@@ -83,8 +85,10 @@ public:
     // Visible top-level tabs (rendered in the strip). v3 / v4 surfaces
     // are reachable via `g`+letter and the palette but intentionally
     // omitted from the strip so it doesn't crowd. App.dispatch handles
-    // tab indices 5..12 mapped to the placeholder views below.
-    std::vector<std::string> tabs = {"Dashboard", "Accounts", "Transactions", "Budget", "Categories"};
+    // tab indices 5..13 mapped to the placeholder views + Snapshot.
+    // Tab 0 is the morning-digest home view (reference Panel 1); the
+    // widget grid moves to tab 13 ("Snapshot", reachable via `g s`).
+    std::vector<std::string> tabs = {"Home", "Accounts", "Transactions", "Budget", "Categories"};
 
     // Q14 (greylock-spec.md §11): vim-style `g`+letter top-level
     // navigation.  When the user presses `g`, we enter a one-shot
@@ -212,6 +216,36 @@ public:
         transactions_view = std::make_unique<TransactionsView>(data_store);
         budget_view = std::make_unique<BudgetView>(data_store);
         categories_view = std::make_unique<CategoriesView>(data_store);
+        home_view = std::make_unique<HomeView>(data_store);
+        {
+            const char* env_email = std::getenv("TF_USER_EMAIL");
+            if (env_email && env_email[0] != '\0') {
+                std::string email = env_email;
+                home_view->set_user_email(email);
+                // Local-part of email becomes the @greylock handle.
+                auto at = email.find('@');
+                home_view->set_user_handle(
+                    at == std::string::npos ? email : email.substr(0, at));
+            }
+            // Scope tags: derive from entity memberships when available;
+            // for now show #me-<handle> + #pcc if a PCC entity exists.
+            std::string tags;
+            for (const auto& e : data_store.entities) {
+                if (e.name == "PCC" || e.name == "Platinum Creek Capital") {
+                    tags += "#pcc + ";
+                    break;
+                }
+            }
+            // Personal scope.
+            std::string handle = "rory";
+            if (const char* em = std::getenv("TF_USER_EMAIL"); em && em[0]) {
+                std::string e = em;
+                auto at = e.find('@');
+                handle = (at == std::string::npos) ? e : e.substr(0, at);
+            }
+            tags += "#me-" + handle;
+            home_view->set_scope_tags(tags);
+        }
 
         // v3 scaffolds.
         notes_view = std::make_unique<PlaceholderView>(
@@ -355,6 +389,8 @@ public:
                 current_tab = 11; focus_.reset(); return;
             case CommandId::SwitchView_RealEstate:
                 current_tab = 12; focus_.reset(); return;
+            case CommandId::SwitchView_Snapshot:
+                current_tab = 13; focus_.reset(); return;
 
             case CommandId::SwitchEntity_Personal:
                 if (data_store.entities.size() >= 1) {
@@ -483,7 +519,7 @@ public:
                 }
             }
             switch (current_tab) {
-                case 0:  return dashboard_view->render(month, &focus_);
+                case 0:  return home_view->render();                        // morning digest
                 case 1:  return accounts_view->render();
                 case 2:  return transactions_view->render();
                 case 3:  return budget_view->render(month);
@@ -496,6 +532,7 @@ public:
                 case 10: return targets_view->render();
                 case 11: return relationships_view->render();
                 case 12: return real_estate_view->render();
+                case 13: return dashboard_view->render(month, &focus_);     // widget grid (Snapshot)
                 default: return text("Unknown") | color(LED_BLUE);
             }
         };
@@ -518,7 +555,8 @@ public:
         // chip so the bar still names the open view.
         static const std::vector<std::string> kHiddenViewNames = {
             "Notes", "Decisions", "Tasks", "Events",
-            "Proposals", "Targets", "Relationships", "Real Estate"
+            "Proposals", "Targets", "Relationships", "Real Estate",
+            "Snapshot"
         };
         Elements view_tabs;
         for (size_t i = 0; i < tabs.size(); ++i) {
@@ -1227,6 +1265,8 @@ int main(int argc, char** argv) {
             else if (event == Event::Character('T')) { app.current_tab = 10; app.focus_.reset(); return true; }
             else if (event == Event::Character('R')) { app.current_tab = 11; app.focus_.reset(); return true; }
             else if (event == Event::Character('r')) { app.current_tab = 12; app.focus_.reset(); return true; }
+            // v1 widget-grid snapshot (kept reachable; default landing is the home digest)
+            else if (event == Event::Character('s')) { app.current_tab = 13; app.focus_.reset(); return true; }
             // Any other key after `g` is just silently ignored — fall
             // through and let downstream handlers see the original event.
         }

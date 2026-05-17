@@ -31,7 +31,8 @@ struct Binding {
 // stays on Tab / hjkl / Enter. Section dividers render as blank rows.
 constexpr Binding kBindings[] = {
     { "",             "── Top-level navigation"        },
-    { "g d",          "Dashboard"                      },
+    { "g d",          "Home (morning digest)"          },
+    { "g s",          "Snapshot (widget grid)"         },
     { "g a",          "Accounts"                       },
     { "g t",          "Transactions"                   },
     { "g b",          "Budget"                         },

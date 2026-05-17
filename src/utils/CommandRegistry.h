@@ -88,6 +88,8 @@ enum class CommandId : int {
     SwitchView_Targets            = 24,
     SwitchView_Relationships      = 25,
     SwitchView_RealEstate         = 26,
+    SwitchView_Snapshot           = 27,   // widget grid (was the v1 Dashboard);
+                                          // home digest now lives at tab 0.
 };
 
 // ---------------------------------------------------------------------------
@@ -102,11 +104,11 @@ struct Command {
 };
 
 // ---------------------------------------------------------------------------
-// The full registry, in declaration order.  Size is 27 (v1 + v2 + v3/v4
-// scaffolds).  Inserting a new ID at the END is ABI-safe; reordering
-// existing IDs is NOT.
+// The full registry, in declaration order.  Size is 28 (v1 + v2 + v3/v4
+// scaffolds + Snapshot).  Inserting a new ID at the END is ABI-safe;
+// reordering existing IDs is NOT.
 // ---------------------------------------------------------------------------
-inline constexpr std::size_t kCommandCount = 27;
+inline constexpr std::size_t kCommandCount = 28;
 
 const std::array<Command, kCommandCount>& all_commands();
 
