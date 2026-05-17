@@ -58,9 +58,10 @@ public:
         char clock_buf[16];
         std::strftime(clock_buf, sizeof(clock_buf), "%H:%M:%S", &lt);
 
+        // Reference: "greylock · rory@greylock · #pcc + #me-rory  09:42:17"
         const std::string header_left =
-            std::string("greylock · ") + user_handle_ +
-            (scope_tags_.empty() ? std::string() : (" · " + scope_tags_));
+            std::string("greylock · ") + user_handle_ + "@greylock"
+            + (scope_tags_.empty() ? std::string() : (" · " + scope_tags_));
 
         Element header = hbox({
             text(header_left) | color(kTokens.fg_emphasized),

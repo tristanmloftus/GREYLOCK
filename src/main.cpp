@@ -35,6 +35,7 @@
 #include "views/AccountsView.h"
 #include "views/TransactionsView.h"
 #include "views/BudgetView.h"
+#include "views/AskView.h"
 #include "views/CategoriesView.h"
 #include "views/DecisionDetailView.h"
 #include "views/GraphView.h"
@@ -89,6 +90,10 @@ public:
     std::unique_ptr<tf::views::DecisionDetailView>     decision_detail_view;
     std::unique_ptr<tf::views::RelationshipDetailView> relationship_detail_view;
     std::unique_ptr<GraphView>                          graph_view;
+    std::unique_ptr<AskView>                            ask_view;
+
+    // Most-recent :ask query text for the command-header chrome.
+    std::string last_ask_query_;
 
     // Most-recent argument captured by the `:open` parser (e.g. "cade",
     // "services-arm"). Used to label the command-header chrome strip.
@@ -315,23 +320,26 @@ public:
                 home_view->set_user_handle(
                     at == std::string::npos ? email : email.substr(0, at));
             }
-            // Scope tags: derive from entity memberships when available;
-            // for now show #me-<handle> + #pcc if a PCC entity exists.
-            std::string tags;
+            // Scope tags: "#pcc + #me-<handle>" when both exist, else
+            // just the side that does. Matches the reference header.
+            bool has_pcc = false;
             for (const auto& e : data_store.entities) {
-                if (e.name == "PCC" || e.name == "Platinum Creek Capital") {
-                    tags += "#pcc + ";
+                if (e.name == "PCC"
+                    || e.name == "Platinum Creek Capital"
+                    || e.name == "Platinum Creek Capital LLC") {
+                    has_pcc = true;
                     break;
                 }
             }
-            // Personal scope.
             std::string handle = "rory";
             if (const char* em = std::getenv("TF_USER_EMAIL"); em && em[0]) {
                 std::string e = em;
                 auto at = e.find('@');
                 handle = (at == std::string::npos) ? e : e.substr(0, at);
             }
-            tags += "#me-" + handle;
+            std::string tags;
+            if (has_pcc) tags = "#pcc + #me-" + handle;
+            else         tags = "#me-" + handle;
             home_view->set_scope_tags(tags);
         }
 
@@ -350,6 +358,7 @@ public:
         decision_detail_view = std::make_unique<tf::views::DecisionDetailView>();
         relationship_detail_view = std::make_unique<tf::views::RelationshipDetailView>();
         graph_view = std::make_unique<GraphView>(data_store);
+        ask_view = std::make_unique<AskView>(data_store);
         // Use the same handle as HomeView for "you · <name>".
         {
             std::string handle_for_graph = "rory";
@@ -652,6 +661,7 @@ public:
                 case 12: return real_estate_view->render();
                 case 13: return dashboard_view->render(month, &focus_);     // widget grid (Snapshot)
                 case 14: return graph_view->render();                      // :graph
+                case 15: return ask_view->render();                        // :ask
                 default: return text("Unknown") | color(LED_BLUE);
             }
         };
@@ -675,7 +685,7 @@ public:
         static const std::vector<std::string> kHiddenViewNames = {
             "Notes", "Decisions", "Tasks", "Events",
             "Proposals", "Targets", "Relationships", "Real Estate",
-            "Snapshot", "Graph"
+            "Snapshot", "Graph", "Ask"
         };
         Elements view_tabs;
         for (size_t i = 0; i < tabs.size(); ++i) {
@@ -757,6 +767,7 @@ public:
             case 12: cmd_for_tab = "real-estate";    break;
             case 13: cmd_for_tab = "snapshot";       break;
             case 14: cmd_for_tab = last_graph_cmd_.empty() ? "graph" : last_graph_cmd_; break;
+            case 15: cmd_for_tab = last_ask_query_.empty() ? "ask" : ("ask " + last_ask_query_); break;
             default: break;
         }
 
@@ -1361,9 +1372,14 @@ int main(int argc, char** argv) {
                     return true;
                 }
                 if (verb == "ask") {
-                    app.status_message =
-                        "ask: blocked on Q8 (embedding model) + Q10 (privacy tiers). "
-                        "Pick those in greylock-questions.md and the loop unlocks.";
+                    // Structured ask handlers (cash position, net worth)
+                    // resolve without an LLM.  Open-ended NL stays blocked
+                    // on Q8/Q10; AskView surfaces that to the user when
+                    // their query isn't recognised.
+                    app.ask_view->set_query(args);
+                    app.last_ask_query_ = args;
+                    app.current_tab = 15;
+                    app.focus_.reset();
                     close_palette();
                     return true;
                 }
