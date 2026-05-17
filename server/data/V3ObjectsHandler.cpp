@@ -201,19 +201,48 @@ void handle_get_relationship(const httplib::Request& req,
         return;
     }
 
-    // Slug fallback: walk rows and slug-match in code.  Cheap; the
-    // relationships table is bounded by the number of people the
-    // principal interacts with regularly.
+    // Slug fallback: walk rows once, score each, emit the best match.
+    // Score:  3 = slug exact ("cade-hartford" == "cade-hartford")
+    //         2 = slug token  ("cade" matches "cade-hartford" via '-' split)
+    //         1 = case-insensitive substring on display_name
     auto stmt2 = db.prepare(
         "SELECT id, display_name, kind, primary_email, primary_phone, "
         "       last_contact_unix, notes_md, created_at_unix, updated_at_unix "
         "FROM relationships;");
+    json best_match = json();
+    int  best_score = 0;
+    std::string lowered_id = lower(id);
     while (stmt2.step() == SQLITE_ROW) {
-        const char* dn = reinterpret_cast<const char*>(sqlite3_column_text(stmt2.get(), 1));
-        if (dn && slug(dn) == sl) {
-            send_json_v3(res, 200, relationship_row_to_json(stmt2.get()));
-            return;
+        const char* dn_c = reinterpret_cast<const char*>(sqlite3_column_text(stmt2.get(), 1));
+        if (!dn_c) continue;
+        std::string dn  = dn_c;
+        std::string dns = slug(dn);
+
+        int score = 0;
+        if (dns == sl) {
+            score = 3;
+        } else {
+            std::size_t start = 0;
+            while (start < dns.size()) {
+                std::size_t dash = dns.find('-', start);
+                if (dash == std::string::npos) dash = dns.size();
+                if (dns.substr(start, dash - start) == sl) { score = 2; break; }
+                start = dash + 1;
+            }
+            if (score == 0 && !sl.empty()
+                && lower(dn).find(lowered_id) != std::string::npos) {
+                score = 1;
+            }
         }
+        if (score > best_score) {
+            best_score = score;
+            best_match = relationship_row_to_json(stmt2.get());
+            if (score == 3) break;
+        }
+    }
+    if (best_score > 0 && !best_match.is_null()) {
+        send_json_v3(res, 200, best_match);
+        return;
     }
     send_json_v3(res, 404, {{"error", "not_found"}});
 }
