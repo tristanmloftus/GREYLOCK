@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Shim for users who clone but don't `pip install -e .`
+exec python3 -m greylock_monitor "$@"

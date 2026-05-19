@@ -1,0 +1,30 @@
+[project]
+name = "greylock-monitor"
+version = "0.1.0"
+description = "Read-only TUI ops monitor for the Greylock server (sidecar)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Rory Loftus" }]
+dependencies = [
+    "textual>=0.80",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+greylock-monitor = "greylock_monitor.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["greylock_monitor*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

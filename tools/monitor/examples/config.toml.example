@@ -1,0 +1,32 @@
+# greylock-monitor config — drop at ~/.config/greylock-monitor/config.toml
+# Every section is optional. Missing data sources surface as "n/a", not errors.
+
+[greylock]
+# Path to the Greylock app log file. If unset, the monitor auto-detects:
+#   /var/log/greylock/app.log
+#   /var/log/greylock.log
+#   /opt/greylock/logs/app.log
+#   ~/.greylock/logs/app.log
+# If still nothing, falls back to: journalctl -u 'greylock*' -n 20
+log_path = "/var/log/greylock/app.log"
+
+# Optional JSON file written by Greylock with its Plaid sync state.
+# The monitor reads `status` and `last_sync` fields if present.
+plaid_status_file = "/var/lib/greylock/plaid_status.json"
+
+# --- DB counts (last-24h transactions/decisions style) ---
+# Connection + queries are declared HERE — the monitor never imports the
+# Greylock schema. Pick sqlite OR postgres, not both.
+
+[greylock.db]
+kind = "sqlite"
+path = "/var/lib/greylock/greylock.db"
+# For postgres, comment the two lines above and uncomment:
+# kind = "postgres"
+# conninfo = "postgresql://reader:password@localhost/greylock"
+
+# Each key becomes a labeled row in the Greylock panel.
+# Queries MUST return a single integer in the first column.
+[greylock.db.queries]
+transactions_24h = "SELECT count(*) FROM transactions WHERE created_at > datetime('now', '-1 day')"
+decisions_24h   = "SELECT count(*) FROM decisions   WHERE created_at > datetime('now', '-1 day')"
