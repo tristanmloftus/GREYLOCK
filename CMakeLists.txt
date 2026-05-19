@@ -1506,7 +1506,7 @@ add_executable(PlaidServiceRefactorTests
   src/services/PlaidService.cpp
   src/services/BackendClient.cpp
   src/services/http/CurlHttpClient.cpp
-  src/utils/Logger.h
+  src/utils/OpenBrowser.cpp
 )
 tf_register_first_party(PlaidServiceRefactorTests)
 
