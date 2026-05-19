@@ -1,0 +1,67 @@
+name: v1-freeze
+
+# Blocks PRs touching v3/v4 ontology surfaces until the v1.0.0 tag.
+# Per ROADMAP.md §4-A. Escape hatch: PR title contains `[v1-ok-touches-v3]`.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  v1-freeze-check:
+    name: v1-freeze (block v3+ work pre-v1.0.0)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Identify changed files
+        id: changed
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Comparing $BASE_SHA...$HEAD_SHA"
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > changed.txt
+          echo "Changed files:"
+          cat changed.txt
+
+      - name: Check for v3-frozen path touches
+        id: check
+        run: |
+          # Path regex matches the v3 surfaces enumerated in ROADMAP.md §4-A
+          PATTERNS='src/views/GraphView|src/views/AskView|src/views/DecisionDetailView|src/views/RelationshipDetailView|V3ObjectsHandler|tests/test_(graph|ask|decision_detail|relationship_detail|v3_)'
+          if grep -E "$PATTERNS" changed.txt > matched.txt; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "Files touching v3-frozen surfaces:"
+            cat matched.txt
+          else
+            echo "matched=false" >> "$GITHUB_OUTPUT"
+            echo "No v3-frozen paths touched."
+          fi
+
+      - name: Enforce v1-freeze (fail unless PR title carries [v1-ok-touches-v3])
+        if: steps.check.outputs.matched == 'true'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if echo "$PR_TITLE" | grep -qF '[v1-ok-touches-v3]'; then
+            echo "::notice::PR title contains [v1-ok-touches-v3] — v3-touch authorized."
+            exit 0
+          fi
+          echo "::error::v1-freeze: this PR touches v3-frozen files but PR title does not carry [v1-ok-touches-v3]."
+          echo ""
+          echo "Per ROADMAP.md §4-A: no v3+ work until v1.0.0 tag."
+          echo ""
+          echo "If this is a legitimate exception (e.g., removing v3 code, fixing a v3-side bug"
+          echo "that blocks v1), add [v1-ok-touches-v3] to the PR title."
+          echo ""
+          echo "Files touching v3-frozen surfaces:"
+          sed 's/^/  /' matched.txt
+          exit 1
