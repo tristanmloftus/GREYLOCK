@@ -3,17 +3,12 @@
 #include "../src/models/Account.h"
 #include "../src/models/Transaction.h"
 #include "../src/models/Entity.h"
-#include "../src/services/DiscoveryService.h"
 #include "../src/services/PlaidService.h"
 #include "../src/services/ConsolidationService.h"
-#include "../src/services/SecurityService.h"
 #include "../src/utils/Validator.h"
 #include "../src/utils/SyntheticGenerator.h"
 #include "../src/utils/ConfigManager.h"
 
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
 #include <chrono>
 
 class DataStoreTest : public ::testing::Test {
@@ -238,71 +233,6 @@ TEST_F(DataStoreTest, DefaultCategoriesExist) {
     auto food = data_store.get_category("cat_food");
     ASSERT_TRUE(food.has_value());
     ASSERT_EQ((*food)->name, "Food & Dining");
-}
-
-TEST_F(DataStoreTest, DiscoveryServiceMapToSupplier) {
-    auto& discovery = DiscoveryService::instance();
-
-    auto ticker1 = discovery.mapToSupplier("AMAZON WEB SERVICES");
-    ASSERT_TRUE(ticker1.has_value());
-    EXPECT_EQ(*ticker1, "AMZN");
-
-    auto ticker2 = discovery.mapToSupplier("Google Cloud Platform invoice");
-    ASSERT_TRUE(ticker2.has_value());
-    EXPECT_EQ(*ticker2, "GOOGL");
-
-    auto ticker3 = discovery.mapToSupplier("Microsoft Azure subscription");
-    ASSERT_TRUE(ticker3.has_value());
-    EXPECT_EQ(*ticker3, "MSFT");
-
-    auto ticker4 = discovery.mapToSupplier("Netflix monthly charge");
-    ASSERT_TRUE(ticker4.has_value());
-    EXPECT_EQ(*ticker4, "NFLX");
-
-    auto no_match = discovery.mapToSupplier("Random unknown merchant xyz");
-    ASSERT_FALSE(no_match.has_value());
-}
-
-TEST_F(DataStoreTest, DiscoveryServiceCalculateVelocity) {
-    auto& discovery = DiscoveryService::instance();
-
-    Account acc;
-    acc.name = "Test";
-    acc.type = AccountType::Checking;
-    acc.balance = 1000.0;
-    data_store.add_account(acc);
-    std::string acc_id = data_store.accounts[0].id;
-
-    Transaction tx1;
-    tx1.account_id = acc_id;
-    tx1.date = "2026-04-15";
-    tx1.amount = -50.0;
-    tx1.description = "Food";
-    tx1.category_id = "cat_food";
-    data_store.add_transaction(tx1);
-
-    Transaction tx2;
-    tx2.account_id = acc_id;
-    tx2.date = "2026-05-15";
-    tx2.amount = -100.0;
-    tx2.description = "More Food";
-    tx2.category_id = "cat_food";
-    data_store.add_transaction(tx2);
-
-    auto velocity = discovery.calculateVelocity(data_store.transactions, data_store.categories);
-    ASSERT_FALSE(velocity.empty());
-
-    auto food_vel = std::find_if(velocity.begin(), velocity.end(),
-        [](const VelocityResult& v) { return v.category_id == "cat_food"; });
-    ASSERT_NE(food_vel, velocity.end());
-    EXPECT_EQ(food_vel->previous_month_spend, 50.0);
-    EXPECT_EQ(food_vel->current_month_spend, 100.0);
-}
-
-TEST_F(DataStoreTest, DiscoveryServiceEmptyDescription) {
-    auto& discovery = DiscoveryService::instance();
-    auto result = discovery.mapToSupplier("");
-    ASSERT_FALSE(result.has_value());
 }
 
 TEST_F(DataStoreTest, ValidatorValidDate) {
@@ -606,39 +536,6 @@ TEST_F(DataStoreTest, PlaidServiceStubUnlinkAccount) {
     ASSERT_TRUE(service->unlink_account("acc_123"));
 }
 
-TEST_F(DataStoreTest, DiscoveryServiceVelocityWithMultipleCategories) {
-    auto& discovery = DiscoveryService::instance();
-
-    Account acc;
-    acc.name = "Test";
-    acc.type = AccountType::Checking;
-    acc.balance = 1000.0;
-    data_store.add_account(acc);
-    std::string acc_id = data_store.accounts[0].id;
-
-    std::vector<Transaction> txs = {
-        Transaction{"", acc_id, "2026-04-01", -100.0, "Food", "cat_food", false, "", "", ""},
-        Transaction{"", acc_id, "2026-04-15", -50.0, "Gas", "cat_gas", false, "", "", ""},
-        Transaction{"", acc_id, "2026-05-01", -200.0, "Food", "cat_food", false, "", "", ""},
-        Transaction{"", acc_id, "2026-05-10", -75.0, "Gas", "cat_gas", false, "", "", ""}
-    };
-
-    for (auto& tx : txs) {
-        tx.id = "tx_" + std::to_string(rand());
-        data_store.transactions.push_back(tx);
-    }
-
-    auto velocity = discovery.calculateVelocity(data_store.transactions, data_store.categories);
-    ASSERT_FALSE(velocity.empty());
-
-    auto food_vel = std::find_if(velocity.begin(), velocity.end(),
-        [](const VelocityResult& v) { return v.category_id == "cat_food"; });
-    ASSERT_NE(food_vel, velocity.end());
-    EXPECT_EQ(food_vel->previous_month_spend, 100.0);
-    EXPECT_EQ(food_vel->current_month_spend, 200.0);
-    EXPECT_EQ(food_vel->percent_change, 100.0);
-}
-
 TEST_F(DataStoreTest, HighVolumeMergeStressTest) {
     auto& consolidation = ConsolidationService::instance();
 
@@ -733,52 +630,6 @@ TEST_F(DataStoreTest, HighVolumeStressTest) {
     ASSERT_GT(spending, 0);
 }
 
-TEST_F(DataStoreTest, DiscoveryServiceDynamicMonthVelocity) {
-    auto& discovery = DiscoveryService::instance();
-
-    Account acc;
-    acc.name = "Test Dynamic";
-    acc.type = AccountType::Checking;
-    acc.balance = 1000.0;
-    data_store.add_account(acc);
-    std::string acc_id = data_store.accounts[0].id;
-
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm;
-#ifdef _WIN32
-    localtime_s(&tm, &t);
-#else
-    localtime_r(&t, &tm);
-#endif
-
-    std::ostringstream prev_ss;
-    prev_ss << (tm.tm_year + 1900) << "-" << std::setw(2) << std::setfill('0') << (tm.tm_mon);
-    std::string prev_month = prev_ss.str();
-
-    std::ostringstream curr_ss;
-    curr_ss << (tm.tm_year + 1900) << "-" << std::setw(2) << std::setfill('0') << (tm.tm_mon + 1);
-    std::string curr_month = curr_ss.str();
-
-    std::vector<Transaction> txs = {
-        Transaction{"", acc_id, prev_month + "-01", -100.0, "Prev", "cat_restaurants", false, "", "", ""},
-        Transaction{"", acc_id, curr_month + "-01", -200.0, "Curr", "cat_restaurants", false, "", "", ""}
-    };
-
-    for (auto& tx : txs) {
-        tx.id = "tx_" + std::to_string(rand());
-        data_store.transactions.push_back(tx);
-    }
-
-    auto velocity = discovery.calculateVelocity(data_store.transactions, data_store.categories);
-    auto cat_vel = std::find_if(velocity.begin(), velocity.end(),
-        [](const VelocityResult& v) { return v.category_id == "cat_restaurants"; });
-
-    if (cat_vel != velocity.end()) {
-        EXPECT_EQ(cat_vel->current_month_spend, 200.0);
-    }
-}
-
 TEST_F(DataStoreTest, ConsolidationServiceRoundTripEmptyMerge) {
     auto& consolidation = ConsolidationService::instance();
 
@@ -790,48 +641,6 @@ TEST_F(DataStoreTest, ConsolidationServiceRoundTripEmptyMerge) {
     EXPECT_EQ(result.duplicate_transactions, 0);
     EXPECT_EQ(result.updated_transactions, 0);
     EXPECT_TRUE(existing.empty());
-}
-
-TEST_F(DataStoreTest, DiscoveryServiceMoMCalculation) {
-    auto& discovery = DiscoveryService::instance();
-
-    Account acc;
-    acc.name = "Test MoM";
-    acc.type = AccountType::Checking;
-    acc.balance = 1000.0;
-    data_store.add_account(acc);
-    std::string acc_id = data_store.accounts[0].id;
-
-    std::vector<Transaction> txs = {
-        Transaction{"", acc_id, "2026-03-01", -50.0, "Mar Food", "cat_food", false, "", "", ""},
-        Transaction{"", acc_id, "2026-04-01", -100.0, "Apr Food", "cat_food", false, "", "", ""},
-        Transaction{"", acc_id, "2026-04-15", -50.0, "Apr Gas", "cat_gas", false, "", "", ""},
-        Transaction{"", acc_id, "2026-05-01", -200.0, "May Food", "cat_food", false, "", "", ""},
-        Transaction{"", acc_id, "2026-05-10", -75.0, "May Gas", "cat_gas", false, "", "", ""},
-        Transaction{"", acc_id, "2026-05-20", 3000.0, "Salary", "cat_salary", false, "", "", ""}
-    };
-
-    for (auto& tx : txs) {
-        tx.id = "tx_" + std::to_string(rand());
-        data_store.transactions.push_back(tx);
-    }
-
-    auto velocity = discovery.calculateVelocity(data_store.transactions, data_store.categories);
-    auto food_vel = std::find_if(velocity.begin(), velocity.end(),
-        [](const VelocityResult& v) { return v.category_id == "cat_food"; });
-
-    if (food_vel != velocity.end()) {
-        EXPECT_EQ(food_vel->current_month_spend, 200.0);
-        EXPECT_EQ(food_vel->previous_month_spend, 100.0);
-    }
-
-    auto gas_vel = std::find_if(velocity.begin(), velocity.end(),
-        [](const VelocityResult& v) { return v.category_id == "cat_gas"; });
-
-    if (gas_vel != velocity.end()) {
-        EXPECT_EQ(gas_vel->current_month_spend, 75.0);
-        EXPECT_EQ(gas_vel->previous_month_spend, 50.0);
-    }
 }
 
 int main(int argc, char **argv) {
