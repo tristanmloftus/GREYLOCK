@@ -79,7 +79,7 @@ TEST_F(PlaidApiClientTest, LinkTokenCreate_Success) {
     EXPECT_TRUE(fake_http_->last_request_url.find("/link/token/create") != std::string::npos);
 
     json sent = json::parse(fake_http_->last_request_body);
-    EXPECT_EQ(sent["client_user_id"], "user_entity_1");
+    EXPECT_EQ(sent["user"]["client_user_id"], "user_entity_1");
     EXPECT_EQ(sent["client_id"], "test_client_id");
 }
 

@@ -133,9 +133,9 @@ TEST(AuthServiceTest, Login_Success_CachesSessionToken) {
     auto secrets = make_fake_secrets();
 
     json resp_body;
-    resp_body["session_token"]  = kSessionTok;
-    resp_body["user_id"]        = kUserId;
-    resp_body["expires_at"]     = int64_t{9999999999};
+    resp_body["session_token"]   = kSessionTok;
+    resp_body["user_id"]         = kUserId;
+    resp_body["expires_at_unix"] = int64_t{9999999999};
     http->next_response = make_resp(200, resp_body.dump());
 
     auto backend = std::make_shared<BackendClient>(http, "https://localhost:8443");
