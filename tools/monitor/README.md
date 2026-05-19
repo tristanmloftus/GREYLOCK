@@ -6,18 +6,18 @@ A **sidecar** — does not import from Greylock. Observes only via files, socket
 
 ## Install
 
-Requires Python 3.11+ (Debian 12 ships 3.11). On the server:
+Requires Python 3.11+ (Debian 12 ships 3.11). From an existing Greylock checkout on the server:
 
 ```bash
-cd /opt
-git clone <repo-url> greylock-monitor
-cd greylock-monitor
+cd /path/to/greylock/tools/monitor
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 # Optional postgres support for db counts:
 # pip install -e ".[postgres]"
 ```
+
+The monitor's Python venv is fully isolated from the main Greylock C++ build. They share a repo root but nothing else.
 
 Permissions (one-time, log out + back in after):
 
